@@ -1,9 +1,17 @@
+# QuestMaster Installation Guide
+
+QuestMaster is a Vencord plugin that automatically completes Discord quests in the background.  
+This guide covers **manual installation only**, giving you full control of the setup.
+
+---
 
 ## Prerequisites
 
-### Required
-- Node.js v18 or higher – [Download](https://nodejs.org/)
-- Git – [Download](https://git-scm.com/download/win)
+You will need the following installed on your system:
+
+- **Node.js v18 or higher** – [Download](https://nodejs.org/)  
+- **Git** – [Download](https://git-scm.com/download/win)  
+- **pnpm** – Installed globally via npm  
 
 #### Install on Linux/macOS:
 ```bash
@@ -14,81 +22,74 @@ nvm install 18
 # Git
 sudo apt install git -y        # Debian/Ubuntu
 brew install git               # macOS (Homebrew)
-```
 
-#### Install on Windows:
-- Install Node.js from [nodejs.org](https://nodejs.org/)
-- Install Git from [git-scm.com](https://git-scm.com/download/win)
-
-### Automatic Installation
-- `pnpm` – Will be installed automatically by the script if not present
-
----
-
-## Installation Methods
-
-### Method 1: Automated Install (Recommended)
-
-#### Windows (PowerShell)
-```powershell
-# Run setup script
-.\setup-questmaster.ps1
-```
-
-Fresh PC install:
-```powershell
-.\setup-questmaster.ps1 -FreshInstall
-```
-
-This script handles:
-- Checking Node.js and Git  
-- Installing pnpm  
-- Cloning Vencord and QuestMaster  
-- Building and injecting Vencord  
-
-### Method 2: Manual Installation
-
-1. **Install prerequisites**
-```bash
+# pnpm
 npm install -g pnpm
 ```
 
-2. **Install or locate Vencord**
+#### Install on Windows:
+- Install Node.js from [nodejs.org](https://nodejs.org/)  
+- Install Git from [git-scm.com](https://git-scm.com/download/win)  
+- Install pnpm:
+```powershell
+npm install -g pnpm
+```
+
+---
+
+## Manual Installation
+
+### Step 1: Clone Vencord
+If you don’t already have Vencord:
 ```bash
-git clone https://github.com/Vendicated/Vencord.git ~/Documents/Vencord
-cd ~/Documents/Vencord
+cd ~/Documents
+git clone https://github.com/Vendicated/Vencord.git
+cd Vencord
 pnpm install --frozen-lockfile
 ```
 
-3. **Install QuestMaster**
+### Step 2: Add QuestMaster
+From your Vencord directory:
 ```bash
 cd src/userplugins
 git clone https://github.com/winters27/QuestMaster.git questMaster
 cd ../..
 ```
 
-4. **Build & Inject Vencord**
+Your folder structure should look like:
+```
+Vencord/
+ └── src/
+     └── userplugins/
+         └── questMaster/
+             ├── index.tsx
+             ├── README.md
+             └── components/
+                 ├── QuestButton.tsx
+                 └── QuestButton.css
+```
+
+### Step 3: Build Vencord
 ```bash
 pnpm build --dev
+```
+
+### Step 4: Inject Vencord
+```bash
 pnpm uninject
 pnpm inject
 ```
 
-5. **Enable Plugin**
-- Restart Discord  
-- Go to **Settings → Vencord → Plugins**  
-- Enable **QuestMaster**  
+### Step 5: Enable QuestMaster
+1. Restart Discord (fully close it, including from the system tray)  
+2. Go to **Settings → Vencord → Plugins**  
+3. Search for **QuestMaster**  
+4. Enable the plugin  
 
 ---
 
-## Updating
+## Updating QuestMaster
 
-### Automatic Update
-```powershell
-.\setup-questmaster.ps1
-```
-
-### Manual Update
 ```bash
 cd Vencord/src/userplugins/questMaster
 git pull
@@ -96,13 +97,15 @@ cd ../../..
 pnpm build --dev
 ```
 
+Restart Discord after updating.
+
 ---
 
 ## Uninstallation
 
+To remove QuestMaster:
 ```bash
 cd Vencord
-# Disable plugin in Discord first
 rm -rf src/userplugins/questMaster
 pnpm build --dev
 ```
@@ -115,33 +118,30 @@ rm -rf Vencord
 
 ---
 
-## Quick Reference
+## Supported Quest Types
 
-**Install (auto):**
-```powershell
-.\setup-questmaster.ps1
-```
+- **Video Quests:** Simulates video watching (browser + desktop)  
+- **Desktop Gameplay Quests:** Spoofs a running game process (desktop only)  
+- **Stream Quests:** Simulates streaming activity (desktop only, requires at least one other person in voice channel)  
+- **Activity Quests:** Sends heartbeats for activity-based quests  
 
-**Install (manual):**
-```bash
-cd Vencord/src/userplugins
-git clone https://github.com/winters27/QuestMaster.git questMaster
-cd ../..
-pnpm build --dev
-pnpm inject
-```
+---
 
-**Update:**
-```bash
-cd Vencord/src/userplugins/questMaster
-git pull
-cd ../../..
-pnpm build --dev
-```
+## Troubleshooting
 
-**Uninstall:**
-```bash
-cd Vencord
-rm -rf src/userplugins/questMaster
-pnpm build --dev
-```
+- Rebuild if plugin doesn’t appear:  
+  ```bash
+  pnpm build --dev
+  ```
+- Check Node.js version:  
+  ```bash
+  node --version
+  ```
+  (must be v18+)  
+- Run PowerShell as Administrator on Windows if injection fails  
+- Ensure Discord is fully restarted after building  
+
+---
+
+## License
+- GPL-3.0-or-later
