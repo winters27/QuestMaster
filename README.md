@@ -139,8 +139,3 @@ rm -rf Vencord
   (must be v18+)  
 - Run PowerShell as Administrator on Windows if injection fails  
 - Ensure Discord is fully restarted after building  
-
----
-
-## License
-- GPL-3.0-or-later
