@@ -1,7 +1,6 @@
 # QuestMaster Installation Guide
 
 QuestMaster is a Vencord plugin that automatically completes Discord quests in the background.  
-This guide covers **manual installation only**, giving you full control of the setup.
 
 ---
 
