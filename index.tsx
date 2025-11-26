@@ -5,18 +5,15 @@
  */
 
 import { definePluginSettings } from "@api/Settings";
-import { Devs } from "@utils/constants";
-import definePlugin, { OptionType } from "@utils/types";
-import { findStoreLazy } from "@webpack";
+import definePlugin from "@utils/types";
+import { filters, waitFor } from "@webpack";
 import { FluxDispatcher, RestAPI } from "@webpack/common";
 
-
-import { QuestButton, QuestsCount } from "./components/QuestButton";
-
-const QuestsStore = findStoreLazy("QuestsStore");
-const RunningGameStore = findStoreLazy("RunningGameStore");
-const ChannelStore = findStoreLazy("ChannelStore");
-const GuildChannelStore = findStoreLazy("GuildChannelStore");
+let QuestsStore: any = null;
+let RunningGameStore: any = null;
+let ChannelStore: any = null;
+let GuildChannelStore: any = null;
+let storesInitialized = false;
 
 let availableQuests: any[] = [];
 let completableQuests: any[] = [];
@@ -25,25 +22,7 @@ const completingQuest = new Map();
 const fakeGames = new Map();
 const fakeApplications = new Map();
 
-const settings = definePluginSettings({
-    showQuestsButtonTopBar: {
-        type: OptionType.BOOLEAN,
-        description: "Whether to show the quests button in the top bar.",
-        default: true,
-        restartNeeded: true
-    },
-    showQuestsButtonSettingsBar: {
-        type: OptionType.BOOLEAN,
-        description: "Whether to show the quests button in the settings bar.",
-        default: false,
-        restartNeeded: true
-    },
-    showQuestsButtonBadges: {
-        type: OptionType.BOOLEAN,
-        description: "Whether to show badges on the quests button.",
-        default: true
-    }
-});
+const settings = definePluginSettings({});
 
 export default definePlugin({
     name: "QuestMaster",
@@ -55,34 +34,6 @@ export default definePlugin({
     settings,
 
     patches: [
-        {
-            find: ".winButtonsWithDivider]",
-            replacement: {
-                match: /(\((\i)\){)(let{leading)/,
-                replace: "$1$2?.trailing?.props?.children?.unshift($self.renderQuestButtonTopBar());$3"
-            }
-        },
-        {
-            find: "#{intl::ACCOUNT_SPEAKING_WHILE_MUTED}",
-            replacement: {
-                match: /className:\i\.buttons,.{0,50}children:\[/,
-                replace: "$&$self.renderQuestButtonSettingsBar(),"
-            }
-        },
-        {
-            find: "\"innerRef\",\"navigate\",\"onClick\"",
-            replacement: {
-                match: /(\i).createElement\("a",(\i)\)/,
-                replace: "$1.createElement(\"a\",$self.renderQuestButtonBadges($2))"
-            }
-        },
-        {
-            find: "location:\"GlobalDiscoverySidebar\"",
-            replacement: {
-                match: /(\(\i\){let{tab:(\i)}=.{0,1500}children:\i}\))(]}\))/,
-                replace: "$1,$self.renderQuestButtonBadges($2)$3"
-            }
-        },
         {
             find: "\"RunningGameStore\"",
             group: true,
@@ -106,36 +57,45 @@ export default definePlugin({
         }
     ],
 
-    start() {
-        QuestsStore.addChangeListener(updateQuests);
-        updateQuests();
+    async start() {
+        // Initialize stores asynchronously
+        try {
+            // Wait for stores to be available
+            waitFor(filters.byProps("quests", "getQuest"), m => {
+                QuestsStore = m;
+                if (QuestsStore && typeof QuestsStore.addChangeListener === "function") {
+                    QuestsStore.addChangeListener(updateQuests);
+                    updateQuests();
+                }
+            });
+
+            waitFor(filters.byProps("getRunningGames"), m => {
+                RunningGameStore = m;
+            });
+
+            waitFor(filters.byProps("getSortedPrivateChannels"), m => {
+                ChannelStore = m;
+            });
+
+            waitFor(filters.byProps("getAllGuilds", "getChannels"), m => {
+                GuildChannelStore = m;
+            });
+
+            storesInitialized = true;
+        } catch (e) {
+            console.error("QuestMaster: Error initializing stores:", e);
+        }
     },
 
     stop() {
-        QuestsStore.removeChangeListener(updateQuests);
+        try {
+            if (QuestsStore && typeof QuestsStore?.removeChangeListener === "function") {
+                QuestsStore.removeChangeListener(updateQuests);
+            }
+        } catch (e) {
+            // Ignore errors during cleanup
+        }
         stopCompletingAll();
-    },
-
-    renderQuestButtonTopBar() {
-        if (settings.store.showQuestsButtonTopBar) {
-            return <QuestButton type="top-bar" />;
-        }
-    },
-
-    renderQuestButtonSettingsBar() {
-        if (settings.store.showQuestsButtonSettingsBar) {
-            return <QuestButton type="settings-bar" />;
-        }
-    },
-
-    renderQuestButtonBadges(questButton: any) {
-        if (settings.store.showQuestsButtonBadges && typeof questButton === "string" && questButton === "quests") {
-            return (<QuestsCount />);
-        }
-        if (settings.store.showQuestsButtonBadges && questButton?.href?.startsWith("/quest-home") && Array.isArray(questButton?.children)) {
-            questButton.children.push(<QuestsCount />);
-        }
-        return questButton;
     },
 
     getRunningGames() {
@@ -158,24 +118,33 @@ export default definePlugin({
 });
 
 function updateQuests() {
-    availableQuests = [...QuestsStore.quests.values()];
-    completableQuests = availableQuests.filter(x =>
-        x.id !== "1248385850622869556" &&
-        x.userStatus?.enrolledAt &&
-        !x.userStatus?.completedAt &&
-        new Date(x.config.expiresAt).getTime() > Date.now()
-    ) || [];
-
-    for (const quest of completableQuests) {
-        if (completingQuest.has(quest.id)) {
-            if (completingQuest.get(quest.id) === false) {
-                completingQuest.delete(quest.id);
-            }
-        } else {
-            completeQuest(quest);
+    try {
+        if (!QuestsStore || !QuestsStore.quests) {
+            console.warn("QuestMaster: QuestsStore not available");
+            return;
         }
+
+        availableQuests = [...QuestsStore.quests.values()];
+        completableQuests = availableQuests.filter(x =>
+            x.id !== "1248385850622869556" &&
+            x.userStatus?.enrolledAt &&
+            !x.userStatus?.completedAt &&
+            new Date(x.config.expiresAt).getTime() > Date.now()
+        ) || [];
+
+        for (const quest of completableQuests) {
+            if (completingQuest.has(quest.id)) {
+                if (completingQuest.get(quest.id) === false) {
+                    completingQuest.delete(quest.id);
+                }
+            } else {
+                completeQuest(quest);
+            }
+        }
+        console.log("Completable quests updated:", completableQuests);
+    } catch (e) {
+        console.error("QuestMaster: Error updating quests:", e);
     }
-    console.log("Completable quests updated:", completableQuests);
 }
 
 function stopCompletingAll() {
@@ -259,6 +228,12 @@ function completeQuest(quest: any) {
         }
 
         case "PLAY_ON_DESKTOP": {
+            if (!RunningGameStore) {
+                console.error("QuestMaster: RunningGameStore not available");
+                completingQuest.set(quest.id, false);
+                return;
+            }
+
             RestAPI.get({ url: `/applications/public?application_ids=${applicationId}` }).then(res => {
                 const appData = res.body[0];
                 const exeName = appData.executables.find((x: any) => x.os === "win32").name.replace(">", "");
@@ -352,8 +327,19 @@ function completeQuest(quest: any) {
         }
 
         case "PLAY_ACTIVITY": {
-            const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ??
-                Object.values(GuildChannelStore.getAllGuilds()).find((x: any) => x != null && x.VOCAL.length > 0).VOCAL[0].channel.id;
+            if (!ChannelStore || !GuildChannelStore) {
+                console.error("QuestMaster: Channel stores not available");
+                completingQuest.set(quest.id, false);
+                return;
+            }
+
+            const sortedChannels = ChannelStore.getSortedPrivateChannels() as any;
+            const channelId = sortedChannels[0]?.id ??
+                (() => {
+                    const guilds = Object.values(GuildChannelStore.getAllGuilds() as any) as any[];
+                    const guildWithVocal = guilds.find((x: any) => x?.VOCAL?.length > 0);
+                    return guildWithVocal?.VOCAL?.[0]?.channel?.id;
+                })();
             const streamKey = `call:${channelId}:1`;
 
             const playActivity = async () => {
