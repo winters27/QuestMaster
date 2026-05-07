@@ -6,6 +6,25 @@ A Vencord plugin that automatically completes Discord quests in the background.
 
 ---
 
+## Features
+
+- **Auto-accept** available quests as they appear
+- **Auto-complete** every supported task type in parallel (multiple quests at once)
+- **Auto-claim** rewards once a quest finishes
+- **Spoofing speed profiles** — pick Balanced, Speedrun (fastest), or Stealth (slow & realistic)
+- **Reward-type filter** — only run quests that grant Nitro / avatar decoration / in-game item / shop currency
+- **Voice channel auto-join** and **auto-invite** for solo `STREAM_ON_DESKTOP` / `PLAY_ACTIVITY` quests
+- **Quest button** in the top bar and/or settings bar with live status (enrollable / enrolled / claimable)
+- **Count badges** on Discord's existing quest sidebar link
+- **Reward code capture** — extracts redeem codes from claim responses into a settings field
+- **Retry-with-backoff** on every API call (honors Discord's `Retry-After`)
+- **Optional captcha bypass** via NopeCHA / 2Captcha / CapSolver (BYO API key) with a free DOM-clicker fallback
+- **Headless mode** — disable all UI, run logic only
+
+> **Captcha warning:** the captcha bypass feature can violate Discord's ToS and put your account at risk. It's off by default and gated behind an explicit toggle. Use at your own risk.
+
+---
+
 ## Quick Install (Windows)
 
 ### Prerequisites
