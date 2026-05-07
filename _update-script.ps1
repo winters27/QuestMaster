@@ -461,6 +461,22 @@ try {
     try {
         Set-Location $VencordPath
 
+        # Vencord installer's built-in "kill Discord" doesn't reliably find Discord
+        # processes on Windows. If Discord is running during inject, the patch can
+        # silently apply to the wrong app folder or be partially overwritten by
+        # Discord's auto-updater. Kill all Discord processes ourselves first.
+        Write-Info "Closing Discord (if running)..."
+        $discordProcs = Get-Process -Name Discord, DiscordSystemHelper, DiscordPTB, DiscordCanary -ErrorAction SilentlyContinue
+        if ($discordProcs) {
+            $discordProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+            # Brief wait so file handles release before the installer touches app.asar.
+            Start-Sleep -Milliseconds 1500
+            Write-Success "Closed $($discordProcs.Count) Discord process(es)."
+        }
+        else {
+            Write-Info "Discord was not running."
+        }
+
         Write-Info "Running pnpm inject..."
         $injectProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c pnpm inject" -NoNewWindow -PassThru
         Start-Sleep -Milliseconds 2000
