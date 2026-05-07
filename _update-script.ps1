@@ -153,7 +153,7 @@ try {
     }
 
     # Step 1: Check for Node.js
-    Write-SectionHeader "[1/9] Checking for Node.js..."
+    Write-SectionHeader "[1/10] Checking for Node.js..."
 
     if (Test-Cmd "node") {
         try {
@@ -183,7 +183,7 @@ try {
     }
 
     # Step 2: Check for pnpm
-    Write-SectionHeader "[2/9] Checking for pnpm..."
+    Write-SectionHeader "[2/10] Checking for pnpm..."
 
     if (Test-Cmd "pnpm") {
         try {
@@ -216,7 +216,7 @@ try {
     }
 
     # Step 3: Check for Git
-    Write-SectionHeader "[3/9] Checking for Git..."
+    Write-SectionHeader "[3/10] Checking for Git..."
 
     if (Test-Cmd "git") {
         try {
@@ -255,7 +255,7 @@ try {
     }
 
     # Step 4: Find/verify Vencord source installation
-    Write-SectionHeader "[4/9] Locating Vencord source directory..."
+    Write-SectionHeader "[4/10] Locating Vencord source directory..."
 
     if ([string]::IsNullOrEmpty($VencordPath)) {
         $VencordPath = Find-VencordInstallation
@@ -300,7 +300,7 @@ try {
 
     # Step 5: Install or update plugin files
     if ($isFirstTimeInstall) {
-        Write-SectionHeader "[5/9] Installing plugin to Vencord..."
+        Write-SectionHeader "[5/10] Installing plugin to Vencord..."
 
         # Copy plugin files to destination
         if (Test-Path $PluginDestDir) {
@@ -323,12 +323,12 @@ try {
         $ScriptDir = $PluginDestDir
     }
     else {
-        Write-SectionHeader "[5/9] Plugin already in place."
+        Write-SectionHeader "[5/10] Plugin already in place."
         Write-Success "Plugin directory: $PluginDestDir"
     }
 
     # Step 6: Git operations (pull latest)
-    Write-SectionHeader "[6/9] Syncing plugin with Git repository..."
+    Write-SectionHeader "[6/10] Syncing plugin with Git repository..."
 
     $origLoc = Get-Location
     try {
@@ -387,10 +387,57 @@ try {
         Set-Location $origLoc
     }
 
-    # Step 7: Sync Vencord dependencies
+    # Step 7: Pull latest Vencord from upstream
+    # Discord auto-updates its internal UI module shapes; Vencord ships matching
+    # patches a few days later. Stale Vencord = patches silently no-op = features
+    # like the Vencord settings tab disappear from Discord.
+    # Use --ff-only so we never clobber user modifications: if the local checkout
+    # has diverged (custom commits on top of main, on a feature branch, etc.),
+    # we warn and continue with the existing version rather than rewriting history.
+    Write-SectionHeader "[7/10] Updating Vencord from upstream..."
+
+    $origLoc = Get-Location
+    try {
+        Set-Location $VencordPath
+
+        if (-not (Test-Path ".git")) {
+            Write-Warn "Vencord directory is not a Git checkout. Skipping update."
+        }
+        else {
+            $currentBranch = (git rev-parse --abbrev-ref HEAD 2>&1).Trim()
+            Write-Info "On branch '$currentBranch'. Fetching origin..."
+            $null = git fetch origin 2>&1
+
+            $behind = (git rev-list --count "HEAD..origin/$currentBranch" 2>&1).Trim()
+            if ($behind -match '^\d+$' -and [int]$behind -gt 0) {
+                Write-Info "Local is $behind commit(s) behind origin/$currentBranch. Fast-forwarding..."
+                $pullOut = git pull --ff-only origin $currentBranch 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Updated Vencord to latest upstream."
+                }
+                else {
+                    Write-Warn "Fast-forward pull failed (likely local divergence)."
+                    Write-Info "Continuing with existing Vencord version. To update manually:"
+                    Write-Info "  cd $VencordPath; git pull"
+                }
+            }
+            else {
+                Write-Success "Vencord already up to date."
+            }
+        }
+    }
+    catch {
+        Write-Warn "Vencord update check failed: $($_.Exception.Message)"
+        Write-Info "Continuing with existing Vencord version."
+    }
+    finally {
+        Set-Location $origLoc
+    }
+
+    # Step 8: Sync Vencord dependencies
     # Vencord upstream sometimes adds new deps to pnpm-lock.yaml. If node_modules
     # isn't re-synced, the build fails with "Could not resolve <pkg>" errors.
-    Write-SectionHeader "[7/9] Syncing Vencord dependencies..."
+    Write-SectionHeader "[8/10] Syncing Vencord dependencies..."
 
     $origLoc = Get-Location
     try {
@@ -423,8 +470,8 @@ try {
         Set-Location $origLoc
     }
 
-    # Step 8: Build Vencord
-    Write-SectionHeader "[8/9] Building Vencord..."
+    # Step 9: Build Vencord
+    Write-SectionHeader "[9/10] Building Vencord..."
 
     $origLoc = Get-Location
     try {
@@ -454,8 +501,8 @@ try {
         Set-Location $origLoc
     }
 
-    # Step 9: Inject Vencord
-    Write-SectionHeader "[9/9] Injecting Vencord into Discord..."
+    # Step 10: Inject Vencord
+    Write-SectionHeader "[10/10] Injecting Vencord into Discord..."
 
     $origLoc = Get-Location
     try {
