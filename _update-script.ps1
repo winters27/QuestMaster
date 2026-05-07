@@ -153,7 +153,7 @@ try {
     }
 
     # Step 1: Check for Node.js
-    Write-SectionHeader "[1/8] Checking for Node.js..."
+    Write-SectionHeader "[1/9] Checking for Node.js..."
 
     if (Test-Cmd "node") {
         try {
@@ -183,7 +183,7 @@ try {
     }
 
     # Step 2: Check for pnpm
-    Write-SectionHeader "[2/8] Checking for pnpm..."
+    Write-SectionHeader "[2/9] Checking for pnpm..."
 
     if (Test-Cmd "pnpm") {
         try {
@@ -216,7 +216,7 @@ try {
     }
 
     # Step 3: Check for Git
-    Write-SectionHeader "[3/8] Checking for Git..."
+    Write-SectionHeader "[3/9] Checking for Git..."
 
     if (Test-Cmd "git") {
         try {
@@ -255,7 +255,7 @@ try {
     }
 
     # Step 4: Find/verify Vencord source installation
-    Write-SectionHeader "[4/8] Locating Vencord source directory..."
+    Write-SectionHeader "[4/9] Locating Vencord source directory..."
 
     if ([string]::IsNullOrEmpty($VencordPath)) {
         $VencordPath = Find-VencordInstallation
@@ -300,7 +300,7 @@ try {
 
     # Step 5: Install or update plugin files
     if ($isFirstTimeInstall) {
-        Write-SectionHeader "[5/8] Installing plugin to Vencord..."
+        Write-SectionHeader "[5/9] Installing plugin to Vencord..."
 
         # Copy plugin files to destination
         if (Test-Path $PluginDestDir) {
@@ -323,12 +323,12 @@ try {
         $ScriptDir = $PluginDestDir
     }
     else {
-        Write-SectionHeader "[5/8] Plugin already in place."
+        Write-SectionHeader "[5/9] Plugin already in place."
         Write-Success "Plugin directory: $PluginDestDir"
     }
 
     # Step 6: Git operations (pull latest)
-    Write-SectionHeader "[6/8] Syncing plugin with Git repository..."
+    Write-SectionHeader "[6/9] Syncing plugin with Git repository..."
 
     $origLoc = Get-Location
     try {
@@ -387,8 +387,44 @@ try {
         Set-Location $origLoc
     }
 
-    # Step 7: Build Vencord
-    Write-SectionHeader "[7/8] Building Vencord..."
+    # Step 7: Sync Vencord dependencies
+    # Vencord upstream sometimes adds new deps to pnpm-lock.yaml. If node_modules
+    # isn't re-synced, the build fails with "Could not resolve <pkg>" errors.
+    Write-SectionHeader "[7/9] Syncing Vencord dependencies..."
+
+    $origLoc = Get-Location
+    try {
+        Set-Location $VencordPath
+
+        Write-Info "Running pnpm install --frozen-lockfile..."
+        $installProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c pnpm install --frozen-lockfile" -NoNewWindow -PassThru -Wait
+
+        if ($installProc.ExitCode -ne 0) {
+            Write-Warn "Frozen install failed (lockfile likely out of sync). Retrying without --frozen-lockfile..."
+            $installProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c pnpm install" -NoNewWindow -PassThru -Wait
+            if ($installProc.ExitCode -ne 0) {
+                throw "Dependency install failed with exit code: $($installProc.ExitCode)"
+            }
+        }
+
+        Write-Success "Dependencies in sync."
+    }
+    catch {
+        Write-Err "Dependency sync error: $($_.Exception.Message)"
+        Write-Host ""
+        Write-Host "  Try running manually:" -ForegroundColor Gray
+        Write-Host "    cd $VencordPath" -ForegroundColor Gray
+        Write-Host "    pnpm install" -ForegroundColor Gray
+        Set-Location $origLoc
+        Wait-KeyPress
+        exit 1
+    }
+    finally {
+        Set-Location $origLoc
+    }
+
+    # Step 8: Build Vencord
+    Write-SectionHeader "[8/9] Building Vencord..."
 
     $origLoc = Get-Location
     try {
@@ -418,8 +454,8 @@ try {
         Set-Location $origLoc
     }
 
-    # Step 8: Inject Vencord
-    Write-SectionHeader "[8/8] Injecting Vencord into Discord..."
+    # Step 9: Inject Vencord
+    Write-SectionHeader "[9/9] Injecting Vencord into Discord..."
 
     $origLoc = Get-Location
     try {
