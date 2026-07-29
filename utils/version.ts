@@ -9,4 +9,4 @@
  * the VERSION file on main to tell you an update exists; if the two drift, the panel lies.
  * `_update-script.ps1` fails the build when they disagree.
  */
-export const PLUGIN_VERSION = "1.2.1";
+export const PLUGIN_VERSION = "1.3.0";

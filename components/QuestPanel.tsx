@@ -7,6 +7,7 @@
 import "./QuestPanel.css";
 
 import { Button } from "@components/Button";
+import { PluginNative } from "@utils/types";
 import { createRoot, NavigationRouter, ReactDOM, Tooltip, useEffect, useRef, useState } from "@webpack/common";
 
 import { getQuestRuntime, isPanelOpen, QuestRuntime, setPanelOpen, subscribeQuestState, toggleQuestPanel } from "../questState";
@@ -14,6 +15,9 @@ import settings from "../settings";
 import { QuestsStore } from "../stores";
 import { checkForUpdate, getUpdateState, REPO_URL, subscribeUpdateState } from "../utils/updateCheck";
 import { PLUGIN_VERSION } from "../utils/version";
+
+// Registered automatically from native.ts by the build, keyed on the plugin's name.
+const Native = VencordNative.pluginHelpers.QuestMaster as PluginNative<typeof import("../native")>;
 
 // navigateToQuestHome no longer exists on current builds. The route itself is stable, so go
 // through the router rather than depending on that helper being found.
@@ -148,12 +152,37 @@ function Section({ title, rows, showBar, note, tone, action }: { title: string; 
 
 function UpdateNotice() {
     const update = getUpdateState();
+    const [canReveal, setCanReveal] = useState(false);
+
+    // Only offer to show the file once the main process confirms it is actually there.
+    useEffect(() => {
+        let cancelled = false;
+
+        Native?.getUpdaterPath()
+            .then(path => { if (!cancelled) setCanReveal(Boolean(path)); })
+            .catch(() => { /* no native helper, so leave it as plain text */ });
+
+        return () => { cancelled = true; };
+    }, []);
+
     if (update.status !== "available") return null;
 
     return (
         <div className="qm-update">
             <span className="qm-update-text">
-                Update available: v{update.latest}. Run <b>Run Update.bat</b> to install.
+                Update available: v{update.latest}. Run{" "}
+                {canReveal
+                    ? (
+                        <a
+                            className="qm-update-link"
+                            onClick={() => void Native.revealUpdater()}
+                            title="Show it in Explorer"
+                        >
+                            Run Update.bat
+                        </a>
+                    )
+                    : <b>Run Update.bat</b>}
+                {" "}to install.
             </span>
             <a className="qm-update-link" href={REPO_URL} target="_blank" rel="noreferrer">Changes</a>
         </div>
