@@ -353,29 +353,78 @@ try {
         else {
             Write-Info "Pulling latest changes..."
 
-            $stashOut = git stash 2>&1
-            $hasStash = $stashOut -notmatch "No local changes"
+            # git is an external program, so a failure sets $LASTEXITCODE instead of
+            # throwing. Every check below reads the exit code; try/catch would not fire.
 
-            try {
-                $null = git pull --rebase 2>&1
+            # Clear leftovers from an interrupted run, otherwise every later git
+            # call fails in a confusing way.
+            if ((Test-Path ".git\rebase-merge") -or (Test-Path ".git\rebase-apply")) {
+                Write-Warn "Unfinished rebase found. Aborting it."
+                git rebase --abort 2>&1 | Out-Null
+            }
+            if (Test-Path ".git\MERGE_HEAD") {
+                Write-Warn "Unfinished merge found. Aborting it."
+                git merge --abort 2>&1 | Out-Null
+            }
+            Remove-Item ".git\AUTO_MERGE" -Force -ErrorAction SilentlyContinue
+
+            # Stash only when the tree is really dirty, and remember the exact stash
+            # we made so we never pop someone else's. Popping a stale stash from an
+            # earlier run silently reverts the plugin to an old version.
+            $isDirty = (git status --porcelain | Measure-Object).Count -gt 0
+            $stashRef = $null
+
+            if ($isDirty) {
+                git stash push -m "questmaster-updater" 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $stashRef = git rev-parse --verify --quiet refs/stash
+                    Write-Info "Local changes stashed."
+                }
+                else {
+                    Write-Warn "Could not stash local changes. Leaving them in place."
+                }
+            }
+
+            $branch = (git rev-parse --abbrev-ref HEAD 2>&1).Trim()
+            if ($branch -eq "HEAD") { $branch = "main" }
+
+            git fetch origin 2>&1 | Out-Null
+            git pull --rebase origin $branch 2>&1 | Out-Null
+
+            if ($LASTEXITCODE -eq 0) {
                 Write-Success "Updated to latest version."
             }
-            catch {
-                Write-Warn "Pull failed, resetting to latest..."
-                $null = git fetch origin 2>&1
-                $currentBranch = git rev-parse --abbrev-ref HEAD 2>&1
-                $null = git reset --hard "origin/$currentBranch" 2>&1
-                Write-Success "Updated via reset."
+            else {
+                Write-Warn "Rebase failed. Resetting to origin/$branch..."
+                git rebase --abort 2>&1 | Out-Null
+                git reset --hard "origin/$branch" 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { Write-Success "Updated via reset." }
+                else { Write-Err "Could not sync with origin/$branch." }
             }
 
-            if ($hasStash) {
-                try {
-                    $null = git stash pop 2>&1
-                    Write-Info "Restored stashed changes."
+            if ($stashRef) {
+                $currentStash = git rev-parse --verify --quiet refs/stash
+                if ($currentStash -eq $stashRef) {
+                    git stash pop 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Info "Restored stashed changes."
+                    }
+                    else {
+                        # A conflicted pop leaves markers in the tree but keeps the
+                        # stash, so reset the files and tell the user where they are.
+                        git checkout -f -- . 2>&1 | Out-Null
+                        Write-Warn "Your local changes conflicted and were left in the stash."
+                        Write-Info "Recover them with: git stash pop"
+                    }
                 }
-                catch {
-                    Write-Warn "Could not restore stash."
-                }
+            }
+
+            # The build silently produces a broken plugin if source files are missing,
+            # so make sure the folder really matches the commit before building.
+            $missing = git diff --name-only --diff-filter=D HEAD
+            if ($missing) {
+                Write-Warn "Plugin files were missing. Restoring them from the current commit."
+                git checkout -f -- . 2>&1 | Out-Null
             }
         }
     }
