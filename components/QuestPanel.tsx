@@ -98,12 +98,14 @@ function QuestRow({ row, showBar, tone }: { row: Row; showBar: boolean; tone?: "
                     <div className={`qm-fill${pct >= 100 ? " qm-fill-done" : ""}`} style={{ width: `${pct}%` }} />
                 </div>
             )}
-            <div className="qm-row-meta">
-                <span>{row.task ? TASK_LABELS[row.task] ?? row.task.toLowerCase() : ""}</span>
-                {row.why
-                    ? <span className={tone === "manual" ? "qm-row-note" : "qm-row-why"}>{row.why}</span>
-                    : showBar && <span>{pct >= 100 ? "complete" : minsLeft ? `~${minsLeft} min left` : `${row.value}/${row.target}s`}</span>}
-            </div>
+            {(row.task || row.why || showBar) && (
+                <div className="qm-row-meta">
+                    <span>{row.task ? TASK_LABELS[row.task] ?? row.task.toLowerCase() : ""}</span>
+                    {row.why
+                        ? <span className={tone === "manual" ? "qm-row-note" : "qm-row-why"}>{row.why}</span>
+                        : showBar && <span>{pct >= 100 ? "complete" : minsLeft ? `~${minsLeft} min left` : `${row.value}/${row.target}s`}</span>}
+                </div>
+            )}
         </div>
     );
 }
@@ -278,23 +280,41 @@ export function QuestPanel() {
  * and its badge and settings-bar components no longer resolve at all, so the plugin cannot rely on
  * borrowing Discord's UI to stay reachable. This button is ours end to end.
  */
-/**
- * Discord's title-bar icon strip. Sitting *in* it means its own flexbox lays us out, so we can
- * never land on top of the inbox or help buttons the way a hardcoded offset did. The top check
- * rejects the chat toolbar, which matches the same class pattern further down the page.
- */
-function findToolbar(): HTMLElement | null {
-    const candidates = [
-        '[class*="titleBar"] [class*="toolbar"]',
-        '[class*="title_"] [class*="toolbar"]',
-        '[class*="toolbar_"]',
-    ];
+const SLOT_ID = "qm-toolbar-slot";
 
-    for (const selector of candidates) {
-        const el = document.querySelector<HTMLElement>(selector);
-        if (el && el.getBoundingClientRect().top < 60) return el;
+/**
+ * Anchor to the window controls and sit immediately before them. `winButtons` is the one title-bar
+ * element confirmed present on this build, and being a flex sibling of Discord's own icons means
+ * it lays us out, so we cannot land on top of anything the way a fixed offset did.
+ *
+ * Returns a slot element we own; React portals into that rather than into Discord's node directly,
+ * so React never manages children it did not create.
+ */
+function ensureToolbarSlot(): HTMLElement | null {
+    const winButtons = document.querySelector('[class*="winButtons"]');
+    const parent = winButtons?.parentElement;
+
+    if (!parent) {
+        // Fall back to the icon strip itself. The top check rejects the chat toolbar, which
+        // matches the same class pattern further down the page.
+        for (const selector of ['[class*="titleBar"] [class*="toolbar"]', '[class*="toolbar_"]']) {
+            const el = document.querySelector<HTMLElement>(selector);
+            if (el && el.getBoundingClientRect().top < 60) return el;
+        }
+        return null;
     }
-    return null;
+
+    let slot = document.getElementById(SLOT_ID);
+    if (!slot) {
+        slot = document.createElement("div");
+        slot.id = SLOT_ID;
+    }
+
+    // Discord rebuilds the title bar on navigation, so re-seat the slot whenever it drifts.
+    if (slot.parentElement !== parent || slot.nextSibling !== winButtons) {
+        parent.insertBefore(slot, winButtons);
+    }
+    return slot;
 }
 
 function QuestLauncher() {
@@ -314,12 +334,15 @@ function QuestLauncher() {
     // Discord rebuilds the title bar on navigation, so re-check rather than resolving once.
     useEffect(() => {
         const check = () => setToolbar(prev => {
-            const next = findToolbar();
+            const next = ensureToolbarSlot();
             return next === prev ? prev : next;
         });
         check();
-        const id = setInterval(check, 3000);
-        return () => clearInterval(id);
+        const id = setInterval(check, 2000);
+        return () => {
+            clearInterval(id);
+            document.getElementById(SLOT_ID)?.remove();
+        };
     }, []);
 
     if (!settings.store.showQuestLauncher) return null;
