@@ -5,22 +5,10 @@
  */
 
 import { setQuestRuntime } from "../questState";
+import { addSpoofedGame, getSpoofedGames, removeSpoofedGame } from "../utils/gameSpoof";
 import { HEARTBEAT_GRACE_MS, readTaskProgress } from "../utils/quest";
 import { callWithRetry } from "../utils/retry";
 import { QuestHandler } from "./types";
-
-// Overriding getRunningGames alone is no longer enough. Newer builds decide quest eligibility
-// from the "visible" and "candidate" views too, and a game missing from those never gets a
-// heartbeat scheduled. Older builds do not expose all of them, so each is patched only where
-// it already exists.
-const PATCHED_METHODS = [
-    "getRunningGames",
-    "getGameForPID",
-    "getVisibleGame",
-    "getVisibleRunningGames",
-    "getRunningDiscordApplicationIds",
-    "getCandidateGames",
-];
 
 export const playOnDesktopHandler: QuestHandler = {
     supports(taskName: string) {
@@ -52,27 +40,9 @@ export const playOnDesktopHandler: QuestHandler = {
             };
 
             const realGames = RunningGameStore.getRunningGames();
-            const fakeGames = [fakeGame];
+            addSpoofedGame(RunningGameStore, quest.id, fakeGame);
 
-            const realMethods: Record<string, any> = {};
-            for (const name of PATCHED_METHODS) {
-                if (typeof RunningGameStore[name] === "function") realMethods[name] = RunningGameStore[name];
-            }
-
-            RunningGameStore.getRunningGames = () => fakeGames;
-            RunningGameStore.getGameForPID = (pidValue: number) => fakeGames.find(x => x.pid === pidValue);
-            if (realMethods.getVisibleGame) RunningGameStore.getVisibleGame = () => fakeGame;
-            if (realMethods.getVisibleRunningGames) RunningGameStore.getVisibleRunningGames = () => fakeGames;
-            if (realMethods.getCandidateGames) RunningGameStore.getCandidateGames = () => fakeGames;
-            if (realMethods.getRunningDiscordApplicationIds) {
-                RunningGameStore.getRunningDiscordApplicationIds = () => {
-                    // The collection type varies by build, so match whatever the real one returns.
-                    const real = realMethods.getRunningDiscordApplicationIds.call(RunningGameStore);
-                    return real instanceof Set ? new Set([String(applicationId)]) : [String(applicationId)];
-                };
-            }
-
-            FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fakeGames });
+            FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: getSpoofedGames() });
 
             let cleaned = false;
             let beats = 0;
@@ -91,8 +61,8 @@ export const playOnDesktopHandler: QuestHandler = {
                 cleaned = true;
 
                 clearTimeout(watchdog);
-                for (const [name, fn] of Object.entries(realMethods)) RunningGameStore[name] = fn;
-                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: [] });
+                removeSpoofedGame(quest.id);
+                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: getSpoofedGames() });
 
                 unsubscribe();
 

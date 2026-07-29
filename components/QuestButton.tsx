@@ -6,20 +6,19 @@
 
 import "./QuestButton.css";
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { Flex } from "@components/Flex";
 import {
     findByCodeLazy,
-    findByPropsLazy,
     findComponentByCodeLazy,
 } from "@webpack";
-import { Tooltip, useEffect, useState } from "@webpack/common";
+import { NavigationRouter, Tooltip, useEffect, useState } from "@webpack/common";
 
 import { toggleQuestPanel } from "../questState";
 import settings from "../settings";
 import { QuestsStore } from "../stores";
 
 const QuestIcon = findByCodeLazy('"M7.5 21.7a8.95');
-const { navigateToQuestHome } = findByPropsLazy("navigateToQuestHome");
 const TopBarButton = findComponentByCodeLazy("badgePosition");
 const SettingsBarButton = findComponentByCodeLazy("iconForeground:");
 const CountBadge = findComponentByCodeLazy('"renderBadgeCount"');
@@ -46,7 +45,10 @@ function questsStatus() {
     );
 }
 
-export function QuestsCount() {
+// CountBadge is one of Discord's own components, found by code. That finder went stale once
+// already, and it renders inside Discord's element tree, so an unguarded throw here takes the
+// surrounding UI with it. Losing the badge is an acceptable degradation; losing the tree is not.
+export const QuestsCount = ErrorBoundary.wrap(function QuestsCountInner() {
     const [status, setStatus] = useState(questsStatus());
 
     const checkForNewQuests = () => {
@@ -104,7 +106,7 @@ export function QuestsCount() {
             )}
         </Flex>
     );
-}
+}, { noop: true });
 
 export function QuestButton({ type }: { type: "top-bar" | "settings-bar"; }) {
     const [state, setState] = useState(questsStatus());
@@ -137,8 +139,8 @@ export function QuestButton({ type }: { type: "top-bar" | "settings-bar"; }) {
 
     // The panel is the more useful landing spot, but Discord's own page is one setting away.
     const opensPanel = (settings.store.questButtonAction ?? "panel") === "panel";
-    const onClick = opensPanel ? toggleQuestPanel : navigateToQuestHome;
-    const disabled = opensPanel ? false : navigateToQuestHome === undefined;
+    const onClick = opensPanel ? toggleQuestPanel : () => NavigationRouter.transitionTo("/quest-home");
+    const disabled = false;
     if (type === "top-bar") {
         return (
             <TopBarButton

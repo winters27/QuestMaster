@@ -1,3 +1,57 @@
+/*
+ * Every colour ends in a literal. Discord has been migrating its theme variables, and a var()
+ * chain with no concrete fallback computes to the initial value when nothing resolves, which for
+ * `background` is transparent. The literals are the dark-theme values, so a missing variable
+ * degrades to "looks right in dark mode" rather than "invisible".
+ */
+
+.qm-launcher {
+  position: fixed;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--interactive-normal, #b5bac1);
+  cursor: pointer;
+
+  /* The title bar is a drag region, so an element inside it swallows clicks without this. */
+  -webkit-app-region: no-drag;
+}
+
+.qm-launcher:hover {
+  background: var(--background-modifier-hover, rgb(255 255 255 / 4%));
+  color: var(--interactive-hover, #dbdee1);
+}
+
+/* Roughly where Discord's own quest button used to sit, clear of the window controls. */
+.qm-launcher-titlebar {
+  top: 4px;
+  right: 152px;
+}
+
+.qm-launcher-bottom {
+  right: 16px;
+  bottom: 16px;
+  background: var(--background-floating, var(--background-secondary, #1e1f22));
+  box-shadow: var(--elevation-high, 0 8px 16px rgb(0 0 0 / 24%));
+}
+
+.qm-launcher-dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 2px solid var(--background-floating, var(--background-secondary, #1e1f22));
+}
+
 .qm-panel {
   position: fixed;
   top: 44px;
@@ -9,9 +63,9 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--background-floating, var(--background-secondary));
-  box-shadow: var(--elevation-high);
-  color: var(--text-normal);
+  background: var(--background-floating, var(--background-secondary, #1e1f22));
+  box-shadow: var(--elevation-high, 0 8px 16px rgb(0 0 0 / 24%));
+  color: var(--text-normal, #dbdee1);
   font-size: 13px;
 }
 
@@ -20,37 +74,37 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--background-modifier-accent);
+  border-bottom: 1px solid var(--background-modifier-accent, rgb(255 255 255 / 6%));
 }
 
 .qm-panel-title {
   font-weight: 600;
-  color: var(--header-primary);
+  color: var(--header-primary, #f2f3f5);
 }
 
 .qm-panel-version {
   margin-right: auto;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-muted, #949ba4);
 }
 
 .qm-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--text-muted, #949ba4);
   flex: 0 0 auto;
 }
 
 .qm-dot-working {
-  background: var(--status-warning);
+  background: var(--status-warning, #f0b232);
 
   /* Deliberate signal: the one thing worth catching your eye is "it is doing something". */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-warning) 25%, transparent);
+  box-shadow: 0 0 0 3px rgb(240 178 50 / 25%);
 }
 
-.qm-dot-ready { background: var(--status-positive); }
-.qm-dot-stopped { background: var(--status-danger); }
+.qm-dot-ready { background: var(--status-positive, #23a55a); }
+.qm-dot-stopped { background: var(--status-danger, #f23f43); }
 
 .qm-icon-btn {
   display: flex;
@@ -62,13 +116,13 @@
   border: none;
   border-radius: 4px;
   background: none;
-  color: var(--interactive-normal);
+  color: var(--interactive-normal, #b5bac1);
   cursor: pointer;
 }
 
 .qm-icon-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--interactive-hover);
+  background: var(--background-modifier-hover, rgb(255 255 255 / 4%));
+  color: var(--interactive-hover, #dbdee1);
 }
 
 .qm-update {
@@ -76,15 +130,15 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
-  border-bottom: 1px solid var(--background-modifier-accent);
+  background: rgb(240 178 50 / 12%);
+  border-bottom: 1px solid var(--background-modifier-accent, rgb(255 255 255 / 6%));
   font-size: 12px;
 }
 
 .qm-update-text { flex: 1; }
 
 .qm-update-link {
-  color: var(--text-link);
+  color: var(--text-link, #00a8fc);
   cursor: pointer;
   text-decoration: none;
 }
@@ -95,7 +149,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   padding: 10px 12px;
-  border-bottom: 1px solid var(--background-modifier-accent);
+  border-bottom: 1px solid var(--background-modifier-accent, rgb(255 255 255 / 6%));
 }
 
 .qm-stat {
@@ -107,7 +161,7 @@
 
 .qm-stat b {
   font-size: 16px;
-  color: var(--header-primary);
+  color: var(--header-primary, #f2f3f5);
   line-height: 1.1;
 }
 
@@ -115,11 +169,11 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  color: var(--text-muted);
+  color: var(--text-muted, #949ba4);
 }
 
-.qm-stat-zero b { color: var(--text-muted); }
-.qm-stat-ready b { color: var(--status-positive); }
+.qm-stat-zero b { color: var(--text-muted, #949ba4); }
+.qm-stat-ready b { color: var(--status-positive, #23a55a); }
 
 .qm-body {
   overflow-y: auto;
@@ -135,63 +189,63 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  color: var(--text-muted);
+  color: var(--text-muted, #949ba4);
 }
 
 .qm-section-count {
   padding: 0 5px;
   border-radius: 8px;
-  background: var(--background-modifier-accent);
-  color: var(--text-muted);
+  background: var(--background-modifier-accent, rgb(255 255 255 / 6%));
+  color: var(--text-muted, #949ba4);
   font-size: 10px;
 }
 
 .qm-row { padding: 5px 12px 7px; }
-.qm-row:hover { background: var(--background-modifier-hover); }
+.qm-row:hover { background: var(--background-modifier-hover, rgb(255 255 255 / 4%)); }
 
 .qm-row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-normal);
+  color: var(--text-normal, #dbdee1);
 }
 
 .qm-bar {
   height: 4px;
   margin: 5px 0 4px;
   border-radius: 2px;
-  background: var(--background-modifier-accent);
+  background: var(--background-modifier-accent, rgb(255 255 255 / 6%));
   overflow: hidden;
 }
 
 .qm-fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--brand-500, var(--brand-experiment));
+  background: var(--brand-500, #5865f2);
   transition: width 0.3s ease;
 }
 
-.qm-fill-done { background: var(--status-positive); }
+.qm-fill-done { background: var(--status-positive, #23a55a); }
 
 .qm-row-meta {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-muted, #949ba4);
 }
 
 .qm-row-why {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--status-danger);
+  color: var(--status-danger, #f23f43);
 }
 
 .qm-empty {
   padding: 24px 16px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-muted, #949ba4);
   font-size: 12px;
   line-height: 1.5;
 }

@@ -46,6 +46,19 @@ export default definePluginSettings({
         description: "Whether to show badges on the quests button.",
         default: true,
     },
+    showQuestLauncher: {
+        type: OptionType.BOOLEAN,
+        description: "Show the Auto Quests button. Unlike the quests button above, this one is drawn by the plugin, so a Discord update cannot take it away.",
+        default: true,
+    },
+    questLauncherPosition: {
+        type: OptionType.SELECT,
+        description: "Where to put the Auto Quests button.",
+        options: [
+            { label: "Title bar, left of the window controls", value: "titlebar", default: true },
+            { label: "Bottom right corner", value: "bottom" },
+        ],
+    },
     questButtonAction: {
         type: OptionType.SELECT,
         description: "What clicking the quests button does.",

@@ -4,15 +4,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
 import { findByCodeLazy, findByPropsLazy } from "@webpack";
 import { FluxDispatcher, RestAPI } from "@webpack/common";
 
 import { QuestButton, QuestsCount } from "./components/QuestButton";
-import { QuestPanelHost } from "./components/QuestPanel";
+import { mountQuestPanel, unmountQuestPanel } from "./components/QuestPanel";
 import { questHandlers } from "./handlers";
 import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaChallenge, patchRequestWithCaptchaBypass, setupCaptchaMonitor, startTokenCacheCleanup, stopTokenCacheCleanup } from "./handlers/captcha";
-import { clearAllQuestRuntime, clearQuestRuntime, setQuestRuntime } from "./questState";
+import { clearAllQuestRuntime, clearQuestRuntime, setPanelOpen, setQuestRuntime, toggleQuestPanel } from "./questState";
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
@@ -35,6 +36,7 @@ const fakeApplications = new Map();
 const claimingQuest = new Set<string>();
 
 let captchaMonitor: MutationObserver | null = null;
+let panelHotkeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 const rewardPreferenceCache = new Map<string, boolean>();
 let updateQuestsTimeout: NodeJS.Timeout | null = null;
@@ -321,7 +323,7 @@ function handleQuestCompletion(quest: QuestValue) {
 
 export default definePlugin({
     name: "QuestMaster",
-    description: "Effortlessly complete Discord quests in the background. Auto-accepts, auto-completes, and auto-claims with optional captcha bypass.",
+    description: "Effortlessly complete Discord quests in the background. Auto-accepts, auto-completes, and auto-claims with optional captcha bypass. Press Ctrl+Shift+Q for the quest panel.",
     authors: [{
         name: "winters27",
         id: 681989594341834765n
@@ -374,6 +376,20 @@ export default definePlugin({
 
         startTokenCacheCleanup();
 
+        if (!settings.store.disableUiRendering) mountQuestPanel();
+
+        // The button renders through Discord's own components, so a Discord update can take it
+        // away without warning. These two routes in depend on nothing but the plugin itself.
+        (window as any).openQuestPanel = () => setPanelOpen(true);
+
+        panelHotkeyHandler = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.code === "KeyQ") {
+                e.preventDefault();
+                toggleQuestPanel();
+            }
+        };
+        document.addEventListener("keydown", panelHotkeyHandler);
+
         if (settings.store.checkForUpdates) void checkForUpdate();
     },
     stop: () => {
@@ -392,31 +408,33 @@ export default definePlugin({
             captchaMonitor = null;
         }
 
+        unmountQuestPanel();
+        delete (window as any).openQuestPanel;
+
+        if (panelHotkeyHandler) {
+            document.removeEventListener("keydown", panelHotkeyHandler);
+            panelHotkeyHandler = null;
+        }
+
         rewardPreferenceCache.clear();
         lastProcessedQuestIds.clear();
         clearAllQuestRuntime();
     },
 
-    renderQuestButtonTopBar() {
-        if (settings.store.disableUiRendering) return;
-        if (settings.store.showQuestsButtonTopBar) {
-            return <><QuestButton type="top-bar" /><QuestPanelHost /></>;
-        }
-    },
+    // Wrapped: these render Discord's own components through webpack finders, which go stale
+    // whenever Discord reshuffles its UI. A stale finder should cost you the button, not the
+    // surface that tells you something is wrong.
+    renderQuestButtonTopBar: ErrorBoundary.wrap(() => {
+        if (settings.store.disableUiRendering) return null;
+        if (!settings.store.showQuestsButtonTopBar) return null;
+        return <QuestButton type="top-bar" />;
+    }, { noop: true }),
 
-    renderQuestButtonSettingsBar() {
-        if (settings.store.disableUiRendering) return;
-        if (settings.store.showQuestsButtonSettingsBar) {
-            // The panel hosts itself from the top bar when that button is on, so only adopt it
-            // here when it would otherwise have nowhere to mount.
-            return (
-                <>
-                    <QuestButton type="settings-bar" />
-                    {!settings.store.showQuestsButtonTopBar && <QuestPanelHost />}
-                </>
-            );
-        }
-    },
+    renderQuestButtonSettingsBar: ErrorBoundary.wrap(() => {
+        if (settings.store.disableUiRendering) return null;
+        if (!settings.store.showQuestsButtonSettingsBar) return null;
+        return <QuestButton type="settings-bar" />;
+    }, { noop: true }),
 
     renderQuestButtonBadges(questButton) {
         if (settings.store.disableUiRendering) {
@@ -538,7 +556,11 @@ function completeQuest(quest: QuestValue) {
     const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
     const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig?.tasks?.[x] != null);
     if (!taskName) {
-        console.log("Unknown task type for quest:", questName);
+        // Naming the keys Discord actually offered turns "unknown task type" into a lead: a new
+        // task name showing up here is the next thing worth supporting.
+        const offered = Object.keys(taskConfig?.tasks ?? {}).join(", ") || "none";
+        console.log("Unknown task type for quest:", questName, `(offered: ${offered})`);
+        setQuestRuntime(quest.id, { name: questName, status: "skipped", why: `unsupported: ${offered}` });
         return;
     }
 
