@@ -53,10 +53,10 @@ export default definePluginSettings({
     },
     questLauncherPosition: {
         type: OptionType.SELECT,
-        description: "Where to put the Auto Quests button.",
+        description: "Where to put the Auto Quests button. It falls back to floating on its own if Discord's toolbar cannot be found.",
         options: [
-            { label: "Title bar, left of the window controls", value: "titlebar", default: true },
-            { label: "Bottom right corner", value: "bottom" },
+            { label: "In Discord's toolbar, next to the inbox", value: "toolbar", default: true },
+            { label: "Floating, above the message box", value: "floating" },
         ],
     },
     questButtonAction: {

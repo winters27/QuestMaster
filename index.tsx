@@ -556,11 +556,25 @@ function completeQuest(quest: QuestValue) {
     const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
     const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig?.tasks?.[x] != null);
     if (!taskName) {
-        // Naming the keys Discord actually offered turns "unknown task type" into a lead: a new
-        // task name showing up here is the next thing worth supporting.
-        const offered = Object.keys(taskConfig?.tasks ?? {}).join(", ") || "none";
-        console.log("Unknown task type for quest:", questName, `(offered: ${offered})`);
-        setQuestRuntime(quest.id, { name: questName, status: "skipped", why: `unsupported: ${offered}` });
+        const offered = Object.keys(taskConfig?.tasks ?? {});
+
+        // These are Discord Activities: an embedded game you launch and play inside Discord.
+        // Progress comes from actually playing, so there is nothing to spoof and nothing broken.
+        if (offered.some(k => k.includes("ACHIEVEMENT"))) {
+            console.log("Play-it-yourself quest:", questName, "(Discord Activity)");
+            setQuestRuntime(quest.id, {
+                name: questName,
+                status: "manual",
+                why: "launch it from the quest and play",
+            });
+            return;
+        }
+
+        // Naming the keys Discord offered turns "unknown task type" into a lead: a new task name
+        // showing up here is the next thing worth supporting.
+        const label = offered.join(", ") || "none";
+        console.log("Unknown task type for quest:", questName, `(offered: ${label})`);
+        setQuestRuntime(quest.id, { name: questName, status: "skipped", why: `unsupported: ${label}` });
         return;
     }
 

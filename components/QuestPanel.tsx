@@ -6,7 +6,7 @@
 
 import "./QuestPanel.css";
 
-import { createRoot, NavigationRouter, Tooltip, useEffect, useState } from "@webpack/common";
+import { createRoot, NavigationRouter, ReactDOM, Tooltip, useEffect, useState } from "@webpack/common";
 
 import { getQuestRuntime, isPanelOpen, QuestRuntime, setPanelOpen, subscribeQuestState, toggleQuestPanel } from "../questState";
 import settings from "../settings";
@@ -54,6 +54,7 @@ function buildRows(runtime: Map<string, QuestRuntime>) {
 
     const running: Row[] = [];
     const skipped: Row[] = [];
+    const manual: Row[] = [];
     const queued: Row[] = [];
     const claimable: Row[] = [];
 
@@ -61,6 +62,10 @@ function buildRows(runtime: Map<string, QuestRuntime>) {
         const name = quest.config.messages.questName ?? quest.id;
         const rt = runtime.get(quest.id);
 
+        if (rt?.status === "manual") {
+            manual.push({ id: quest.id, name, task: rt.taskName, why: rt.why, value: rt.value, target: rt.target });
+            continue;
+        }
         if (rt?.status === "skipped") {
             skipped.push({ id: quest.id, name, task: rt.taskName, why: rt.why ?? "skipped", value: rt.value, target: rt.target });
             continue;
@@ -78,10 +83,10 @@ function buildRows(runtime: Map<string, QuestRuntime>) {
         }
     }
 
-    return { running, skipped, queued, claimable };
+    return { running, skipped, manual, queued, claimable };
 }
 
-function QuestRow({ row, showBar }: { row: Row; showBar: boolean; }) {
+function QuestRow({ row, showBar, tone }: { row: Row; showBar: boolean; tone?: "manual"; }) {
     const pct = row.target > 0 ? Math.min(100, Math.round((row.value / row.target) * 100)) : 0;
     const minsLeft = row.target > row.value ? Math.ceil((row.target - row.value) / 60) : 0;
 
@@ -96,14 +101,14 @@ function QuestRow({ row, showBar }: { row: Row; showBar: boolean; }) {
             <div className="qm-row-meta">
                 <span>{row.task ? TASK_LABELS[row.task] ?? row.task.toLowerCase() : ""}</span>
                 {row.why
-                    ? <span className="qm-row-why">{row.why}</span>
+                    ? <span className={tone === "manual" ? "qm-row-note" : "qm-row-why"}>{row.why}</span>
                     : showBar && <span>{pct >= 100 ? "complete" : minsLeft ? `~${minsLeft} min left` : `${row.value}/${row.target}s`}</span>}
             </div>
         </div>
     );
 }
 
-function Section({ title, rows, showBar }: { title: string; rows: Row[]; showBar: boolean; }) {
+function Section({ title, rows, showBar, note, tone }: { title: string; rows: Row[]; showBar: boolean; note?: string; tone?: "manual"; }) {
     if (!rows.length) return null;
 
     return (
@@ -112,7 +117,8 @@ function Section({ title, rows, showBar }: { title: string; rows: Row[]; showBar
                 {title}
                 <span className="qm-section-count">{rows.length}</span>
             </div>
-            {rows.map(row => <QuestRow key={row.id} row={row} showBar={showBar} />)}
+            {note && <div className="qm-section-note">{note}</div>}
+            {rows.map(row => <QuestRow key={row.id} row={row} showBar={showBar} tone={tone} />)}
         </>
     );
 }
@@ -150,7 +156,7 @@ export function QuestPanel() {
 
     if (!isPanelOpen()) return null;
 
-    const { running, skipped, queued, claimable } = buildRows(getQuestRuntime());
+    const { running, skipped, manual, queued, claimable } = buildRows(getQuestRuntime());
 
     const dotClass = skipped.length
         ? "qm-dot qm-dot-stopped"
@@ -171,10 +177,10 @@ export function QuestPanel() {
         ["running", running.length, ""],
         ["queued", queued.length, ""],
         ["to claim", claimable.length, "qm-stat-ready"],
-        ["skipped", skipped.length, ""],
+        ["play these", manual.length, ""],
     ];
 
-    const nothingToShow = !running.length && !skipped.length && !queued.length && !claimable.length;
+    const nothingToShow = !running.length && !skipped.length && !manual.length && !queued.length && !claimable.length;
 
     return (
         <div className="qm-panel">
@@ -251,6 +257,13 @@ export function QuestPanel() {
                         <>
                             <Section title="Ready to claim" rows={claimable} showBar={false} />
                             <Section title="Running now" rows={running} showBar={true} />
+                            <Section
+                                title="Play these yourself"
+                                rows={manual}
+                                showBar={false}
+                                tone="manual"
+                                note="These run as an Activity inside Discord. Open the quest, hit Play, and the game loads in Discord's own window. Progress only counts while you are actually playing, so there is nothing to automate here."
+                            />
                             <Section title="Skipped" rows={skipped} showBar={false} />
                             <Section title="Queued" rows={queued} showBar={false} />
                         </>
@@ -265,8 +278,28 @@ export function QuestPanel() {
  * and its badge and settings-bar components no longer resolve at all, so the plugin cannot rely on
  * borrowing Discord's UI to stay reachable. This button is ours end to end.
  */
+/**
+ * Discord's title-bar icon strip. Sitting *in* it means its own flexbox lays us out, so we can
+ * never land on top of the inbox or help buttons the way a hardcoded offset did. The top check
+ * rejects the chat toolbar, which matches the same class pattern further down the page.
+ */
+function findToolbar(): HTMLElement | null {
+    const candidates = [
+        '[class*="titleBar"] [class*="toolbar"]',
+        '[class*="title_"] [class*="toolbar"]',
+        '[class*="toolbar_"]',
+    ];
+
+    for (const selector of candidates) {
+        const el = document.querySelector<HTMLElement>(selector);
+        if (el && el.getBoundingClientRect().top < 60) return el;
+    }
+    return null;
+}
+
 function QuestLauncher() {
     const [, forceUpdate] = useState(0);
+    const [toolbar, setToolbar] = useState<HTMLElement | null>(null);
 
     useEffect(() => {
         const rerender = () => forceUpdate(n => n + 1);
@@ -278,10 +311,23 @@ function QuestLauncher() {
         };
     }, []);
 
+    // Discord rebuilds the title bar on navigation, so re-check rather than resolving once.
+    useEffect(() => {
+        const check = () => setToolbar(prev => {
+            const next = findToolbar();
+            return next === prev ? prev : next;
+        });
+        check();
+        const id = setInterval(check, 3000);
+        return () => clearInterval(id);
+    }, []);
+
     if (!settings.store.showQuestLauncher) return null;
 
     const { running, skipped, claimable } = buildRows(getQuestRuntime());
-    const position = settings.store.questLauncherPosition ?? "titlebar";
+    const wantsToolbar = (settings.store.questLauncherPosition ?? "toolbar") === "toolbar";
+    // Falling back to floating is the point: never overlap, even when the toolbar cannot be found.
+    const inToolbar = wantsToolbar && toolbar !== null;
 
     const dotClass = skipped.length
         ? "qm-dot-stopped"
@@ -299,11 +345,11 @@ function QuestLauncher() {
                 ? `Auto Quests: ${claimable.length} ready to claim`
                 : "Auto Quests";
 
-    return (
+    const button = (
         <Tooltip text={`${label} (Ctrl+Shift+Q)`}>
             {({ onMouseEnter, onMouseLeave }) => (
                 <button
-                    className={`qm-launcher qm-launcher-${position}`}
+                    className={`qm-launcher ${inToolbar ? "qm-launcher-inline" : "qm-launcher-floating"}`}
                     onMouseEnter={onMouseEnter}
                     onMouseLeave={onMouseLeave}
                     onClick={toggleQuestPanel}
@@ -316,6 +362,8 @@ function QuestLauncher() {
             )}
         </Tooltip>
     );
+
+    return inToolbar ? ReactDOM.createPortal(button, toolbar!) : button;
 }
 
 function QuestPanelRoot() {

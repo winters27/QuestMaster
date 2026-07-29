@@ -6,19 +6,19 @@
  */
 
 .qm-launcher {
-  position: fixed;
-  z-index: 1002;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: none;
   color: var(--interactive-normal, #b5bac1);
   cursor: pointer;
+  flex: 0 0 auto;
 
   /* The title bar is a drag region, so an element inside it swallows clicks without this. */
   -webkit-app-region: no-drag;
@@ -29,15 +29,20 @@
   color: var(--interactive-hover, #dbdee1);
 }
 
-/* Roughly where Discord's own quest button used to sit, clear of the window controls. */
-.qm-launcher-titlebar {
-  top: 4px;
-  right: 152px;
+/* Laid out by Discord's own toolbar flexbox, so it can never overlap its neighbours. */
+.qm-launcher-inline {
+  margin: 0 8px 0 0;
 }
 
-.qm-launcher-bottom {
+/* Only used when the toolbar cannot be found. Clear of the message box and the member list. */
+.qm-launcher-floating {
+  position: fixed;
+  z-index: 1002;
   right: 16px;
-  bottom: 16px;
+  bottom: 88px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: var(--background-floating, var(--background-secondary, #1e1f22));
   box-shadow: var(--elevation-high, 0 8px 16px rgb(0 0 0 / 24%));
 }
@@ -240,6 +245,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--status-danger, #f23f43);
+}
+
+/* Deliberately not the error colour: nothing is wrong, it just needs you. */
+.qm-row-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, #949ba4);
+}
+
+.qm-section-note {
+  padding: 0 12px 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted, #949ba4);
 }
 
 .qm-empty {

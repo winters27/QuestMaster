@@ -10,7 +10,11 @@
  * enrolled/claimable, this for running progress and skip reasons.
  */
 
-export type QuestRuntimeStatus = "running" | "skipped";
+/**
+ * "manual" is not a failure. Some quests can only be finished by the person playing, so they are
+ * separated from things that actually broke; showing them in red taught you to ignore red.
+ */
+export type QuestRuntimeStatus = "running" | "skipped" | "manual";
 
 export interface QuestRuntime {
     id: string;
