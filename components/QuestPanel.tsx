@@ -294,24 +294,58 @@ const LAUNCHER_GAP = 6;
  * So the button stays in our own root and is positioned just left of that strip. Nothing of ours
  * lives in Discord's tree, so there is nothing for React to remove.
  */
+let lastMeasureLog = "";
+
+function logMeasure(message: string) {
+    // Runs on a 1s interval, so only speak when the answer actually changes.
+    if (message === lastMeasureLog) return;
+    lastMeasureLog = message;
+    console.log("[QuestMaster]", message);
+}
+
 function measureTitleBarSlot(): { top: number; left: number; } | null {
     const winButtons = document.querySelector('[class*="winButtons"]');
     const strip = winButtons?.parentElement
         ?? document.querySelector('[class*="titleBar"] [class*="toolbar"]');
 
-    if (!strip) return null;
+    if (!strip) {
+        logMeasure("No title-bar strip found, so the button is floating instead.");
+        return null;
+    }
 
-    const rect = strip.getBoundingClientRect();
+    /*
+     * Measure the icons, not their container. The container spans the full width of the title bar
+     * with its contents right-aligned, so its own left edge is near 0 and useless as an anchor;
+     * reading it is what left the button stuck in the floating position. The leftmost child with
+     * a real box is the first icon, which is where we want to sit.
+     */
+    const boxes = [...strip.children]
+        .map(child => child.getBoundingClientRect())
+        .filter(r => r.width > 0 && r.height > 0);
+
+    if (!boxes.length) {
+        logMeasure("The title-bar strip has no laid-out children yet, so the button is floating.");
+        return null;
+    }
+
+    const first = boxes.reduce((a, b) => (a.left <= b.left ? a : b));
+
     // Reject the chat toolbar, which matches the same class pattern further down the page.
-    if (rect.top > 60 || rect.width === 0 || rect.height === 0) return null;
+    if (first.top > 60) {
+        logMeasure(`Only found a strip at y=${Math.round(first.top)}, too low to be the title bar.`);
+        return null;
+    }
 
-    const left = rect.left - LAUNCHER_SIZE - LAUNCHER_GAP;
-    if (left < 0) return null;
+    const left = Math.round(first.left - LAUNCHER_SIZE - LAUNCHER_GAP);
+    if (left < 0) {
+        logMeasure(`No room left of the title-bar icons (they start at x=${Math.round(first.left)}).`);
+        return null;
+    }
 
-    return {
-        top: Math.round(rect.top + (rect.height - LAUNCHER_SIZE) / 2),
-        left: Math.round(left),
-    };
+    const top = Math.round(first.top + (first.height - LAUNCHER_SIZE) / 2);
+    logMeasure(`Docked to the title bar at ${left},${top}, just left of the icons at x=${Math.round(first.left)}.`);
+
+    return { top, left };
 }
 
 function QuestLauncher() {
