@@ -48,12 +48,12 @@ export default definePluginSettings({
     },
     showQuestLauncher: {
         type: OptionType.BOOLEAN,
-        description: "Show the Auto Quests button. Unlike the quests button above, this one is drawn by the plugin, so a Discord update cannot take it away.",
+        description: "Show the QuestMaster button. Unlike the quests button above, this one is drawn by the plugin, so a Discord update cannot take it away.",
         default: true,
     },
     questLauncherPosition: {
         type: OptionType.SELECT,
-        description: "Where to put the Auto Quests button. It falls back to floating on its own if Discord's toolbar cannot be found.",
+        description: "Where to put the QuestMaster button. It falls back to floating on its own if Discord's toolbar cannot be found.",
         options: [
             { label: "In Discord's toolbar, next to the inbox", value: "toolbar", default: true },
             { label: "Floating, above the message box", value: "floating" },
@@ -63,7 +63,7 @@ export default definePluginSettings({
         type: OptionType.SELECT,
         description: "What clicking the quests button does.",
         options: [
-            { label: "Open the Auto Quests panel", value: "panel", default: true },
+            { label: "Open the QuestMaster panel", value: "panel", default: true },
             { label: "Open Discord's quest page", value: "questPage" },
         ],
     },

@@ -289,6 +289,13 @@
   color: var(--text-muted, #949ba4);
 }
 
+.qm-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .qm-empty {
   padding: 36px 24px;
   text-align: center;
