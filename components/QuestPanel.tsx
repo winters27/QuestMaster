@@ -6,7 +6,7 @@
 
 import "./QuestPanel.css";
 
-import { createRoot, NavigationRouter, ReactDOM, Tooltip, useEffect, useState } from "@webpack/common";
+import { createRoot, NavigationRouter, Tooltip, useEffect, useState } from "@webpack/common";
 
 import { getQuestRuntime, isPanelOpen, QuestRuntime, setPanelOpen, subscribeQuestState, toggleQuestPanel } from "../questState";
 import settings from "../settings";
@@ -280,46 +280,43 @@ export function QuestPanel() {
  * and its badge and settings-bar components no longer resolve at all, so the plugin cannot rely on
  * borrowing Discord's UI to stay reachable. This button is ours end to end.
  */
-const SLOT_ID = "qm-toolbar-slot";
+const LAUNCHER_SIZE = 24;
+const LAUNCHER_GAP = 6;
 
 /**
- * Anchor to the window controls and sit immediately before them. `winButtons` is the one title-bar
- * element confirmed present on this build, and being a flex sibling of Discord's own icons means
- * it lays us out, so we cannot land on top of anything the way a fixed offset did.
+ * Measure the title bar's trailing strip rather than inserting into it.
  *
- * Returns a slot element we own; React portals into that rather than into Discord's node directly,
- * so React never manages children it did not create.
+ * Inserting was the obvious approach and it does not work: that container belongs to Discord's
+ * React tree, so the next time Discord re-renders it, reconciliation evicts any child React did
+ * not create. The portal then keeps rendering into a detached node and the button silently
+ * vanishes (it measures 0x0 at 0,0, which is exactly what was observed).
+ *
+ * So the button stays in our own root and is positioned just left of that strip. Nothing of ours
+ * lives in Discord's tree, so there is nothing for React to remove.
  */
-function ensureToolbarSlot(): HTMLElement | null {
+function measureTitleBarSlot(): { top: number; left: number; } | null {
     const winButtons = document.querySelector('[class*="winButtons"]');
-    const parent = winButtons?.parentElement;
+    const strip = winButtons?.parentElement
+        ?? document.querySelector('[class*="titleBar"] [class*="toolbar"]');
 
-    if (!parent) {
-        // Fall back to the icon strip itself. The top check rejects the chat toolbar, which
-        // matches the same class pattern further down the page.
-        for (const selector of ['[class*="titleBar"] [class*="toolbar"]', '[class*="toolbar_"]']) {
-            const el = document.querySelector<HTMLElement>(selector);
-            if (el && el.getBoundingClientRect().top < 60) return el;
-        }
-        return null;
-    }
+    if (!strip) return null;
 
-    let slot = document.getElementById(SLOT_ID);
-    if (!slot) {
-        slot = document.createElement("div");
-        slot.id = SLOT_ID;
-    }
+    const rect = strip.getBoundingClientRect();
+    // Reject the chat toolbar, which matches the same class pattern further down the page.
+    if (rect.top > 60 || rect.width === 0 || rect.height === 0) return null;
 
-    // Discord rebuilds the title bar on navigation, so re-seat the slot whenever it drifts.
-    if (slot.parentElement !== parent || slot.nextSibling !== winButtons) {
-        parent.insertBefore(slot, winButtons);
-    }
-    return slot;
+    const left = rect.left - LAUNCHER_SIZE - LAUNCHER_GAP;
+    if (left < 0) return null;
+
+    return {
+        top: Math.round(rect.top + (rect.height - LAUNCHER_SIZE) / 2),
+        left: Math.round(left),
+    };
 }
 
 function QuestLauncher() {
     const [, forceUpdate] = useState(0);
-    const [toolbar, setToolbar] = useState<HTMLElement | null>(null);
+    const [dock, setDock] = useState<{ top: number; left: number; } | null>(null);
 
     useEffect(() => {
         const rerender = () => forceUpdate(n => n + 1);
@@ -331,26 +328,31 @@ function QuestLauncher() {
         };
     }, []);
 
-    // Discord rebuilds the title bar on navigation, so re-check rather than resolving once.
+    // The title bar moves with window size and Discord re-renders it on navigation, so re-measure
+    // rather than resolving once. This only reads layout; it never touches Discord's DOM.
     useEffect(() => {
-        const check = () => setToolbar(prev => {
-            const next = ensureToolbarSlot();
-            return next === prev ? prev : next;
+        const measure = () => setDock(prev => {
+            const next = measureTitleBarSlot();
+            if (next?.top === prev?.top && next?.left === prev?.left) return prev;
+            return next;
         });
-        check();
-        const id = setInterval(check, 2000);
+
+        measure();
+        const id = setInterval(measure, 1000);
+        window.addEventListener("resize", measure);
+
         return () => {
             clearInterval(id);
-            document.getElementById(SLOT_ID)?.remove();
+            window.removeEventListener("resize", measure);
         };
     }, []);
 
     if (!settings.store.showQuestLauncher) return null;
 
+    const wantsTitleBar = (settings.store.questLauncherPosition ?? "toolbar") === "toolbar";
+    const docked = wantsTitleBar && dock !== null;
+
     const { running, skipped, claimable } = buildRows(getQuestRuntime());
-    const wantsToolbar = (settings.store.questLauncherPosition ?? "toolbar") === "toolbar";
-    // Falling back to floating is the point: never overlap, even when the toolbar cannot be found.
-    const inToolbar = wantsToolbar && toolbar !== null;
 
     const dotClass = skipped.length
         ? "qm-dot-stopped"
@@ -368,11 +370,12 @@ function QuestLauncher() {
                 ? `Auto Quests: ${claimable.length} ready to claim`
                 : "Auto Quests";
 
-    const button = (
+    return (
         <Tooltip text={`${label} (Ctrl+Shift+Q)`}>
             {({ onMouseEnter, onMouseLeave }) => (
                 <button
-                    className={`qm-launcher ${inToolbar ? "qm-launcher-inline" : "qm-launcher-floating"}`}
+                    className={`qm-launcher ${docked ? "qm-launcher-docked" : "qm-launcher-floating"}`}
+                    style={docked ? { top: dock!.top, left: dock!.left } : undefined}
                     onMouseEnter={onMouseEnter}
                     onMouseLeave={onMouseLeave}
                     onClick={toggleQuestPanel}
@@ -385,8 +388,6 @@ function QuestLauncher() {
             )}
         </Tooltip>
     );
-
-    return inToolbar ? ReactDOM.createPortal(button, toolbar!) : button;
 }
 
 function QuestPanelRoot() {

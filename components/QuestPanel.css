@@ -32,9 +32,14 @@
   color: var(--interactive-hover, #dbdee1);
 }
 
-/* Laid out by Discord's own toolbar flexbox, so it can never overlap its neighbours. */
-.qm-launcher-inline {
-  margin: 0 8px;
+/*
+ * Positioned from the measured title bar rather than parented into it. Discord's React owns that
+ * container and evicts foreign children on re-render, so living outside it is what keeps the
+ * button on screen. `top` and `left` are set inline from the measurement.
+ */
+.qm-launcher-docked {
+  position: fixed;
+  z-index: 1002;
 }
 
 /* Only used when the toolbar cannot be found. Clear of the message box and the member list. */
