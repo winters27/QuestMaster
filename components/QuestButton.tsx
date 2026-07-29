@@ -14,6 +14,8 @@ import {
 } from "@webpack";
 import { Tooltip, useEffect, useState } from "@webpack/common";
 
+import { toggleQuestPanel } from "../questState";
+import settings from "../settings";
 import { QuestsStore } from "../stores";
 
 const QuestIcon = findByCodeLazy('"M7.5 21.7a8.95');
@@ -132,19 +134,24 @@ export function QuestButton({ type }: { type: "top-bar" | "settings-bar"; }) {
             : state.claimable
                 ? `${state.claimable} Claimable Quests`
                 : "Quests";
+
+    // The panel is the more useful landing spot, but Discord's own page is one setting away.
+    const opensPanel = (settings.store.questButtonAction ?? "panel") === "panel";
+    const onClick = opensPanel ? toggleQuestPanel : navigateToQuestHome;
+    const disabled = opensPanel ? false : navigateToQuestHome === undefined;
     if (type === "top-bar") {
         return (
             <TopBarButton
                 className={className}
                 iconClassName={undefined}
-                disabled={navigateToQuestHome === undefined}
+                disabled={disabled}
                 showBadge={
                     state.enrollable > 0 || state.enrolled > 0 || state.claimable > 0
                 }
                 badgePosition={"bottom"}
                 icon={QuestIcon}
                 iconSize={20}
-                onClick={navigateToQuestHome}
+                onClick={onClick}
                 onContextMenu={undefined}
                 tooltip={tooltip}
                 tooltipPosition={"bottom"}
@@ -156,22 +163,22 @@ export function QuestButton({ type }: { type: "top-bar" | "settings-bar"; }) {
             <SettingsBarButton
                 tooltipText={tooltip}
                 onContextMenu={undefined}
-                onClick={navigateToQuestHome}
-                disabled={navigateToQuestHome === undefined}
+                onClick={onClick}
+                disabled={disabled}
                 icon={undefined}
                 className={"quest-button"}
             >
                 <TopBarButton
                     className={className}
                     iconClassName={undefined}
-                    disabled={navigateToQuestHome === undefined}
+                    disabled={disabled}
                     showBadge={
                         state.enrollable > 0 || state.enrolled > 0 || state.claimable > 0
                     }
                     badgePosition={"bottom"}
                     icon={QuestIcon}
                     iconSize={20}
-                    onClick={navigateToQuestHome}
+                    onClick={onClick}
                     onContextMenu={undefined}
                     tooltip={tooltip}
                     tooltipPosition={"bottom"}

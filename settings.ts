@@ -46,6 +46,19 @@ export default definePluginSettings({
         description: "Whether to show badges on the quests button.",
         default: true,
     },
+    questButtonAction: {
+        type: OptionType.SELECT,
+        description: "What clicking the quests button does.",
+        options: [
+            { label: "Open the Auto Quests panel", value: "panel", default: true },
+            { label: "Open Discord's quest page", value: "questPage" },
+        ],
+    },
+    checkForUpdates: {
+        type: OptionType.BOOLEAN,
+        description: "Check GitHub for a newer version and show a notice in the panel. Only reads a version number; it never downloads or installs anything.",
+        default: true,
+    },
     spoofingSpeedMode: {
         type: OptionType.SELECT,
         description: "Controls how quickly spoofed progress/heartbeats are sent.",

@@ -6,6 +6,7 @@
 
 import { findByPropsLazy } from "@webpack";
 
+import { setQuestRuntime } from "../questState";
 import settings from "../settings";
 import { readTaskProgress } from "../utils/quest";
 import { callWithRetry } from "../utils/retry";
@@ -93,6 +94,7 @@ export const playActivityHandler: QuestHandler = {
         const channelId = resolveVoiceChannelId(ChannelStore, GuildChannelStore);
         if (!channelId) {
             console.error("[CompleteDiscordQuest] No voice channel found to use for quest:", questName);
+            setQuestRuntime(quest.id, { status: "skipped", why: "no voice channel available" });
             completingQuest.set(quest.id, false);
             return;
         }
@@ -109,11 +111,13 @@ export const playActivityHandler: QuestHandler = {
                     res = await callWithRetry(() => RestAPI.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } }), { label: "heartbeat" });
                 } catch (err) {
                     console.error("Heartbeat failed after retries, stopping quest:", questName, err);
+                    setQuestRuntime(quest.id, { status: "skipped", why: "heartbeat failed" });
                     completingQuest.set(quest.id, false);
                     break;
                 }
                 // The heartbeat reply carries progress at the top level, keyed by task name.
                 const progress = readTaskProgress(res.body, taskName);
+                setQuestRuntime(quest.id, { value: progress, target: secondsNeeded });
                 console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                 const { playActivity: playActivityProfile } = getSpoofingProfile();

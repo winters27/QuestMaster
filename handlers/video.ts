@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { setQuestRuntime } from "../questState";
 import { callWithRetry } from "../utils/retry";
 import { QuestHandler } from "./types";
 
@@ -44,8 +45,10 @@ export const videoHandler: QuestHandler = {
                             break;
                         }
                         secondsDone = Math.min(secondsNeeded, timestamp);
+                        setQuestRuntime(quest.id, { value: Math.floor(secondsDone), target: secondsNeeded });
                     } catch (err) {
                         console.error("Video progress failed after retries, stopping quest:", questName, err);
+                        setQuestRuntime(quest.id, { status: "skipped", why: "video progress failed" });
                         completingQuest.set(quest.id, false);
                         break;
                     }

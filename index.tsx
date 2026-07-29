@@ -9,13 +9,16 @@ import { findByCodeLazy, findByPropsLazy } from "@webpack";
 import { FluxDispatcher, RestAPI } from "@webpack/common";
 
 import { QuestButton, QuestsCount } from "./components/QuestButton";
+import { QuestPanelHost } from "./components/QuestPanel";
 import { questHandlers } from "./handlers";
 import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaChallenge, patchRequestWithCaptchaBypass, setupCaptchaMonitor, startTokenCacheCleanup, stopTokenCacheCleanup } from "./handlers/captcha";
+import { clearAllQuestRuntime, clearQuestRuntime, setQuestRuntime } from "./questState";
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
 import { readTaskProgress, resolveQuestApplication } from "./utils/quest";
 import { callWithRetry } from "./utils/retry";
+import { checkForUpdate } from "./utils/updateCheck";
 
 const QuestApplyAction = findByCodeLazy("type:\"QUESTS_ENROLL_BEGIN\"") as (questId: string, action: QuestAction) => Promise<any>;
 const QuestClaimAction = findByCodeLazy("type:\"QUESTS_CLAIM_REWARD_BEGIN\"") as (questId: string, action: QuestAction) => Promise<any>;
@@ -312,6 +315,7 @@ async function claimQuestReward(quest: QuestValue) {
 
 function handleQuestCompletion(quest: QuestValue) {
     completingQuest.set(quest.id, false);
+    clearQuestRuntime(quest.id);
     void claimQuestReward(quest);
 }
 
@@ -369,6 +373,8 @@ export default definePlugin({
         captchaMonitor = setupCaptchaMonitor(servicePreference, apiKeys);
 
         startTokenCacheCleanup();
+
+        if (settings.store.checkForUpdates) void checkForUpdate();
     },
     stop: () => {
         QuestsStore.removeChangeListener(updateQuestsDebounced);
@@ -388,19 +394,27 @@ export default definePlugin({
 
         rewardPreferenceCache.clear();
         lastProcessedQuestIds.clear();
+        clearAllQuestRuntime();
     },
 
     renderQuestButtonTopBar() {
         if (settings.store.disableUiRendering) return;
         if (settings.store.showQuestsButtonTopBar) {
-            return <QuestButton type="top-bar" />;
+            return <><QuestButton type="top-bar" /><QuestPanelHost /></>;
         }
     },
 
     renderQuestButtonSettingsBar() {
         if (settings.store.disableUiRendering) return;
         if (settings.store.showQuestsButtonSettingsBar) {
-            return <QuestButton type="settings-bar" />;
+            // The panel hosts itself from the top bar when that button is on, so only adopt it
+            // here when it would otherwise have nowhere to mount.
+            return (
+                <>
+                    <QuestButton type="settings-bar" />
+                    {!settings.store.showQuestsButtonTopBar && <QuestPanelHost />}
+                </>
+            );
         }
     },
 
@@ -545,6 +559,7 @@ function completeQuest(quest: QuestValue) {
     // quest, so it would idle at 0% instead of failing. Say so rather than sitting silent.
     if (!applicationId && (taskName === "PLAY_ON_DESKTOP" || taskName === "STREAM_ON_DESKTOP")) {
         console.error(`[QuestMaster] No application id found for "${questName}" (${taskName}). Discord may have moved it again. Skipping this quest.`);
+        setQuestRuntime(quest.id, { name: questName, taskName, status: "skipped", why: "no application id" });
         completingQuest.set(quest.id, false);
         return;
     }
@@ -552,11 +567,20 @@ function completeQuest(quest: QuestValue) {
     const handler = questHandlers.find(h => h.supports(taskName));
     if (!handler) {
         console.error("No handler found for task type:", taskName);
+        setQuestRuntime(quest.id, { name: questName, taskName, status: "skipped", why: `unsupported task ${taskName}` });
         completingQuest.set(quest.id, false);
         return;
     }
 
     completingQuest.set(quest.id, true);
+    setQuestRuntime(quest.id, {
+        name: questName,
+        taskName,
+        status: "running",
+        value: secondsDone,
+        target: secondsNeeded,
+        why: undefined,
+    });
 
     console.log(`Completing quest ${questName} (${quest.id}) - ${taskName} for ${secondsNeeded} seconds.`);
 

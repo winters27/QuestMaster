@@ -1,0 +1,197 @@
+.qm-panel {
+  position: fixed;
+  top: 44px;
+  right: 12px;
+  z-index: 1002;
+  width: 320px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--background-floating, var(--background-secondary));
+  box-shadow: var(--elevation-high);
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+.qm-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--background-modifier-accent);
+}
+
+.qm-panel-title {
+  font-weight: 600;
+  color: var(--header-primary);
+}
+
+.qm-panel-version {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.qm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.qm-dot-working {
+  background: var(--status-warning);
+
+  /* Deliberate signal: the one thing worth catching your eye is "it is doing something". */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-warning) 25%, transparent);
+}
+
+.qm-dot-ready { background: var(--status-positive); }
+.qm-dot-stopped { background: var(--status-danger); }
+
+.qm-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--interactive-normal);
+  cursor: pointer;
+}
+
+.qm-icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--interactive-hover);
+}
+
+.qm-update {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+  border-bottom: 1px solid var(--background-modifier-accent);
+  font-size: 12px;
+}
+
+.qm-update-text { flex: 1; }
+
+.qm-update-link {
+  color: var(--text-link);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.qm-update-link:hover { text-decoration: underline; }
+
+.qm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--background-modifier-accent);
+}
+
+.qm-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.qm-stat b {
+  font-size: 16px;
+  color: var(--header-primary);
+  line-height: 1.1;
+}
+
+.qm-stat span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.qm-stat-zero b { color: var(--text-muted); }
+.qm-stat-ready b { color: var(--status-positive); }
+
+.qm-body {
+  overflow-y: auto;
+  padding: 4px 0 8px;
+}
+
+.qm-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.qm-section-count {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--background-modifier-accent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.qm-row { padding: 5px 12px 7px; }
+.qm-row:hover { background: var(--background-modifier-hover); }
+
+.qm-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+.qm-bar {
+  height: 4px;
+  margin: 5px 0 4px;
+  border-radius: 2px;
+  background: var(--background-modifier-accent);
+  overflow: hidden;
+}
+
+.qm-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--brand-500, var(--brand-experiment));
+  transition: width 0.3s ease;
+}
+
+.qm-fill-done { background: var(--status-positive); }
+
+.qm-row-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.qm-row-why {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--status-danger);
+}
+
+.qm-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

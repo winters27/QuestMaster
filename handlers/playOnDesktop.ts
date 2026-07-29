@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { setQuestRuntime } from "../questState";
 import { HEARTBEAT_GRACE_MS, readTaskProgress } from "../utils/quest";
 import { callWithRetry } from "../utils/retry";
 import { QuestHandler } from "./types";
@@ -112,6 +113,10 @@ export const playOnDesktopHandler: QuestHandler = {
                     console.error(beats === 0
                         ? `[QuestMaster] Discord never sent a heartbeat for "${questName}". It is not accepting the spoofed game on this client, so there is nothing to wait for.`
                         : `[QuestMaster] Discord stopped sending heartbeats for "${questName}" after ${beats}. Giving up.`);
+                    setQuestRuntime(quest.id, {
+                        status: "skipped",
+                        why: beats === 0 ? "Discord never started it" : "heartbeats stopped",
+                    });
                     cleanup(false);
                 }, HEARTBEAT_GRACE_MS);
             };
@@ -129,6 +134,7 @@ export const playOnDesktopHandler: QuestHandler = {
                 armWatchdog();
 
                 const progress = readTaskProgress(data.userStatus, taskName, configVersion);
+                setQuestRuntime(quest.id, { value: progress, target: secondsNeeded });
 
                 console.log(`Quest progress: ${progress}/${secondsNeeded}`);
 

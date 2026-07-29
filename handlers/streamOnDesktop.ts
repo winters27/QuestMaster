@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { setQuestRuntime } from "../questState";
 import { ApplicationStreamingStore } from "../stores";
 import { HEARTBEAT_GRACE_MS, readTaskProgress } from "../utils/quest";
 import { QuestHandler } from "./types";
@@ -57,6 +58,7 @@ export const streamOnDesktopHandler: QuestHandler = {
             clearTimeout(watchdog);
             watchdog = setTimeout(() => {
                 console.error(`[QuestMaster] Discord stopped sending heartbeats for "${questName}" after ${beats}. Check you are still streaming with someone else in the call.`);
+                setQuestRuntime(quest.id, { status: "skipped", why: "stream heartbeats stopped" });
                 cleanup(false);
             }, HEARTBEAT_GRACE_MS);
         };
@@ -74,6 +76,7 @@ export const streamOnDesktopHandler: QuestHandler = {
             armWatchdog();
 
             const progress = readTaskProgress(event.userStatus, taskName, configVersion);
+            setQuestRuntime(quest.id, { value: progress, target: secondsNeeded });
 
             console.log(`Quest progress: ${progress}/${secondsNeeded}`);
 

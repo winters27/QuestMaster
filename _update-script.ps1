@@ -426,6 +426,20 @@ try {
                 Write-Warn "Plugin files were missing. Restoring them from the current commit."
                 git checkout -f -- . 2>&1 | Out-Null
             }
+
+            # The in-app update notice compares the version baked into the bundle against the
+            # VERSION file on main. If the two ever disagree the notice is wrong in one
+            # direction or the other, so catch the drift here rather than in the panel.
+            $versionFile = Join-Path $ScriptDir "VERSION"
+            $versionTs = Join-Path $ScriptDir "utils\version.ts"
+            if ((Test-Path $versionFile) -and (Test-Path $versionTs)) {
+                $fileVersion = (Get-Content -Raw $versionFile).Trim()
+                $tsMatch = [regex]::Match((Get-Content -Raw $versionTs), 'PLUGIN_VERSION\s*=\s*"([^"]+)"')
+                if ($tsMatch.Success -and $tsMatch.Groups[1].Value -ne $fileVersion) {
+                    Write-Warn "VERSION says $fileVersion but utils\version.ts says $($tsMatch.Groups[1].Value)."
+                    Write-Info "The in-app update notice will be wrong until these match."
+                }
+            }
         }
     }
     catch {
