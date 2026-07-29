@@ -289,11 +289,11 @@
   color: var(--text-muted, #949ba4);
 }
 
-.qm-row-action {
+.qm-section-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  margin: 8px 16px 2px;
 }
 
 .qm-empty {
