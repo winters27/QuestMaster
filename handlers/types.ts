@@ -12,8 +12,10 @@ export interface QuestHandlerContext {
     taskName: string;
     secondsNeeded: number;
     secondsDone: number;
-    applicationId: string;
-    applicationName: string;
+    // Absent when a quest carries no application at all; the game/stream paths are guarded
+    // upstream in completeQuest, the video/activity paths never need it.
+    applicationId?: string;
+    applicationName?: string;
     configVersion: number;
     pid: number;
     isApp: boolean;

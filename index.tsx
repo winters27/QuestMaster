@@ -14,6 +14,7 @@ import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaCha
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
+import { readTaskProgress, resolveQuestApplication } from "./utils/quest";
 import { callWithRetry } from "./utils/retry";
 
 const QuestApplyAction = findByCodeLazy("type:\"QUESTS_ENROLL_BEGIN\"") as (questId: string, action: QuestAction) => Promise<any>;
@@ -519,20 +520,32 @@ function completeQuest(quest: QuestValue) {
 
     const pid = Math.floor(Math.random() * 30000) + 1000;
 
-    const applicationId = quest.config.application.id;
-    const applicationName = quest.config.application.name;
     const { questName } = quest.config.messages;
     const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
-    const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig.tasks[x] != null);
+    const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig?.tasks?.[x] != null);
     if (!taskName) {
         console.log("Unknown task type for quest:", questName);
         return;
     }
-    const secondsNeeded = taskConfig.tasks[taskName].target;
-    const secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
+
+    // Resolve the application only after the task is known, since newer quests store it
+    // per task rather than on the quest config.
+    const taskData = taskConfig.tasks[taskName];
+    const { id: applicationId, name: applicationName } = resolveQuestApplication(quest, taskData);
+
+    const secondsNeeded = taskData.target;
+    const secondsDone = readTaskProgress(quest.userStatus, taskName, quest.config.configVersion);
 
     if (!isApp && taskName !== "WATCH_VIDEO" && taskName !== "WATCH_VIDEO_ON_MOBILE") {
         console.log("This no longer works in browser for non-video quests. Use the discord desktop app to complete the", questName, "quest!");
+        return;
+    }
+
+    // Without a real application id the spoofed process is one Discord can never match to the
+    // quest, so it would idle at 0% instead of failing. Say so rather than sitting silent.
+    if (!applicationId && (taskName === "PLAY_ON_DESKTOP" || taskName === "STREAM_ON_DESKTOP")) {
+        console.error(`[QuestMaster] No application id found for "${questName}" (${taskName}). Discord may have moved it again. Skipping this quest.`);
+        completingQuest.set(quest.id, false);
         return;
     }
 

@@ -5,6 +5,7 @@
  */
 
 import { ApplicationStreamingStore } from "../stores";
+import { HEARTBEAT_GRACE_MS, readTaskProgress } from "../utils/quest";
 import { QuestHandler } from "./types";
 
 export const streamOnDesktopHandler: QuestHandler = {
@@ -12,7 +13,7 @@ export const streamOnDesktopHandler: QuestHandler = {
         return taskName === "STREAM_ON_DESKTOP";
     },
 
-    handle({ quest, questName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, FluxDispatcher, completingQuest, onQuestComplete }) {
+    handle({ quest, questName, taskName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, FluxDispatcher, completingQuest, onQuestComplete }) {
         const realFunc = ApplicationStreamingStore.getStreamerActiveStreamMetadata;
 
         ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
@@ -21,15 +22,23 @@ export const streamOnDesktopHandler: QuestHandler = {
             sourceName: null
         });
 
+        let cleaned = false;
+        let beats = 0;
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+
         const unsubscribe = () => {
             try {
                 FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onHeartbeat);
             } catch {
-                
+
             }
         };
 
         const cleanup = (completed: boolean) => {
+            if (cleaned) return;
+            cleaned = true;
+
+            clearTimeout(watchdog);
             ApplicationStreamingStore.getStreamerActiveStreamMetadata = realFunc;
             unsubscribe();
 
@@ -41,6 +50,17 @@ export const streamOnDesktopHandler: QuestHandler = {
             }
         };
 
+        // Unlike the game quest, this one waits on the user to start streaming in a call, which
+        // has no time limit. So the watchdog only arms once heartbeats have started: it catches
+        // a stream that stalls, and never punishes someone slow to set up.
+        const armWatchdog = () => {
+            clearTimeout(watchdog);
+            watchdog = setTimeout(() => {
+                console.error(`[QuestMaster] Discord stopped sending heartbeats for "${questName}" after ${beats}. Check you are still streaming with someone else in the call.`);
+                cleanup(false);
+            }, HEARTBEAT_GRACE_MS);
+        };
+
         const onHeartbeat = (event: any) => {
             if (event.questId !== quest.id) return;
 
@@ -50,9 +70,10 @@ export const streamOnDesktopHandler: QuestHandler = {
                 return;
             }
 
-            const progress = configVersion === 1
-                ? event.userStatus.streamProgressSeconds
-                : Math.floor(event.userStatus.progress.STREAM_ON_DESKTOP.value);
+            beats++;
+            armWatchdog();
+
+            const progress = readTaskProgress(event.userStatus, taskName, configVersion);
 
             console.log(`Quest progress: ${progress}/${secondsNeeded}`);
 
@@ -63,7 +84,7 @@ export const streamOnDesktopHandler: QuestHandler = {
 
         FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onHeartbeat);
 
-        console.log(`Spoofed your stream to ${applicationName}. Stream any window in vc for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
+        console.log(`Spoofed your stream to ${applicationName ?? "the quest game"}. Stream any window in vc for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
         console.log("Remember that you need at least 1 other person to be in the vc!");
     }
 };

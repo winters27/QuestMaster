@@ -30,11 +30,13 @@ interface UserStatus {
     progress: Progress;
 }
 
+// Keyed by task name (PLAY_ON_DESKTOP, STREAM_ON_DESKTOP, ...), so read it with the
+// task name detected from the config rather than a hardcoded key.
 interface Progress {
-    PLAY_ON_DESKTOP: PLAYONDESKTOP2;
+    [taskName: string]: ProgressEntry | undefined;
 }
 
-interface PLAYONDESKTOP2 {
+interface ProgressEntry {
     eventName: string;
     value: number;
     updatedAt: string;
@@ -53,6 +55,9 @@ interface Config {
     startsAt: string;
     expiresAt: string;
     features: number[];
+    // Declared required because the sibling completeDiscordQuest plugin declares these same
+    // global interfaces and the two must match. It is absent at runtime on newer quests, so
+    // always read it with `?.` and fall back to the per-task application.
     application: Application;
     assets: Assets;
     colors: Colors;
@@ -92,12 +97,14 @@ interface TaskConfigV2 {
 }
 
 interface Tasks {
-    PLAY_ON_DESKTOP: PLAYONDESKTOP;
+    [taskName: string]: TaskDefinition | undefined;
 }
 
-interface PLAYONDESKTOP {
+interface TaskDefinition {
     type: string;
     target: number;
+    // taskConfigV2 carries the quest's application here, per task, instead of on the config.
+    applications?: Application[];
 }
 
 interface Messages {

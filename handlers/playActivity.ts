@@ -7,6 +7,7 @@
 import { findByPropsLazy } from "@webpack";
 
 import settings from "../settings";
+import { readTaskProgress } from "../utils/quest";
 import { callWithRetry } from "../utils/retry";
 import { QuestHandler } from "./types";
 
@@ -88,7 +89,7 @@ export const playActivityHandler: QuestHandler = {
         return taskName === "PLAY_ACTIVITY";
     },
 
-    handle({ quest, questName, secondsNeeded, RestAPI, completingQuest, ChannelStore, GuildChannelStore, getSpoofingProfile, onQuestComplete }) {
+    handle({ quest, questName, taskName, secondsNeeded, RestAPI, completingQuest, ChannelStore, GuildChannelStore, getSpoofingProfile, onQuestComplete }) {
         const channelId = resolveVoiceChannelId(ChannelStore, GuildChannelStore);
         if (!channelId) {
             console.error("[CompleteDiscordQuest] No voice channel found to use for quest:", questName);
@@ -111,7 +112,8 @@ export const playActivityHandler: QuestHandler = {
                     completingQuest.set(quest.id, false);
                     break;
                 }
-                const progress = res.body.progress.PLAY_ACTIVITY.value;
+                // The heartbeat reply carries progress at the top level, keyed by task name.
+                const progress = readTaskProgress(res.body, taskName);
                 console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                 const { playActivity: playActivityProfile } = getSpoofingProfile();
