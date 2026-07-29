@@ -12,7 +12,7 @@ import { FluxDispatcher, RestAPI } from "@webpack/common";
 import { QuestButton, QuestsCount } from "./components/QuestButton";
 import { mountQuestPanel, unmountQuestPanel } from "./components/QuestPanel";
 import { questHandlers } from "./handlers";
-import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaChallenge, patchRequestWithCaptchaBypass, setupCaptchaMonitor, startTokenCacheCleanup, stopTokenCacheCleanup } from "./handlers/captcha";
+import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaChallenge, hasSolverService, noticeManualCaptcha, patchRequestWithCaptchaBypass, setupCaptchaMonitor, startTokenCacheCleanup, stopTokenCacheCleanup } from "./handlers/captcha";
 import { clearAllQuestRuntime, clearQuestRuntime, setPanelOpen, setQuestRuntime, toggleQuestPanel } from "./questState";
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
@@ -39,6 +39,22 @@ let captchaMonitor: MutationObserver | null = null;
 let panelHotkeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 const rewardPreferenceCache = new Map<string, boolean>();
+
+/**
+ * Discord answers a claim with a captcha, and retrying immediately just asks for another one. Give
+ * a challenged quest a rest so the next attempt lands after there has been a chance to solve it,
+ * rather than stacking challenges on top of each other.
+ */
+const claimBackoff = new Map<string, number>();
+const CLAIM_CAPTCHA_BACKOFF_MS = 2 * 60 * 1000;
+
+function getCaptchaApiKeys() {
+    return {
+        nopecha: settings.store.nopchaApiKey,
+        twoCaptcha: settings.store.twoCaptchaApiKey,
+        capsolver: settings.store.capsolverApiKey,
+    };
+}
 let updateQuestsTimeout: NodeJS.Timeout | null = null;
 let lastProcessedQuestIds = new Set<string>();
 
@@ -245,6 +261,10 @@ async function claimQuestReward(quest: QuestValue) {
     if (claimingQuest.has(quest.id)) return;
     if (quest.userStatus?.claimedAt) return;
 
+    // Quiet on purpose: this runs on every store change, so a log here would be its own spam.
+    const waitUntil = claimBackoff.get(quest.id) ?? 0;
+    if (Date.now() < waitUntil) return;
+
     const questName = quest.config.messages.questName ?? quest.id;
     const endpoints = [`/quests/${quest.id}/claim-reward`];
 
@@ -272,11 +292,15 @@ async function claimQuestReward(quest: QuestValue) {
                 }
                 return true;
             } catch (err: any) {
-                if (settings.store.autoCaptchaSolving) {
-                    const challenge = detectCaptchaChallenge(err);
-                    if (challenge) {
-                        console.log("[CompleteDiscordQuest] Captcha detected during claim, bypassing...");
-                        const bypassResult = await bypassCaptcha(challenge);
+                const challenge = detectCaptchaChallenge(err);
+
+                if (challenge) {
+                    const apiKeys = getCaptchaApiKeys();
+
+                    // Only worth attempting when a solver actually exists. Previously this called
+                    // bypassCaptcha with no keys at all, so a configured service was never used.
+                    if (settings.store.autoCaptchaSolving && hasSolverService(apiKeys)) {
+                        const bypassResult = await bypassCaptcha(challenge, settings.store.captchaSolvingService, apiKeys);
                         if (bypassResult.success && bypassResult.token) {
                             try {
                                 const retryRes = await callWithRetry(fn, { label: "claim-reward-with-captcha" });
@@ -286,12 +310,18 @@ async function claimQuestReward(quest: QuestValue) {
                                 }
                                 return true;
                             } catch (retryErr) {
-                                console.warn(`[CompleteDiscordQuest] Claim retry with captcha failed for ${questName}`, retryErr);
+                                console.warn(`[QuestMaster] Claim retry after solving the captcha failed for ${questName}`, retryErr);
                             }
                         }
                     }
+
+                    // Back off either way. Hammering the endpoint only produces more challenges.
+                    claimBackoff.set(quest.id, Date.now() + CLAIM_CAPTCHA_BACKOFF_MS);
+                    noticeManualCaptcha(`claiming ${questName}`);
+                    return false;
                 }
-                console.warn(`[CompleteDiscordQuest] Claim attempt failed (${label}) for quest ${questName}`, err);
+
+                console.warn(`[QuestMaster] Claim attempt failed (${label}) for quest ${questName}`, err);
                 return false;
             }
         };
@@ -366,11 +396,7 @@ export default definePlugin({
         // Always setup captcha monitor for auto-click checkbox feature
         const servicePreference = settings.store.autoCaptchaSolving ?
             settings.store.captchaSolvingService : "fallback";
-        const apiKeys = settings.store.autoCaptchaSolving ? {
-            nopecha: settings.store.nopchaApiKey,
-            twoCaptcha: settings.store.twoCaptchaApiKey,
-            capsolver: settings.store.capsolverApiKey,
-        } : undefined;
+        const apiKeys = settings.store.autoCaptchaSolving ? getCaptchaApiKeys() : undefined;
 
         captchaMonitor = setupCaptchaMonitor(servicePreference, apiKeys);
 
@@ -418,6 +444,7 @@ export default definePlugin({
 
         rewardPreferenceCache.clear();
         lastProcessedQuestIds.clear();
+        claimBackoff.clear();
         clearAllQuestRuntime();
     },
 

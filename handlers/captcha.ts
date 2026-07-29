@@ -429,15 +429,41 @@ async function solveWithCapSolver(
     }
 }
 
+export interface CaptchaApiKeys {
+    nopecha?: string;
+    twoCaptcha?: string;
+    capsolver?: string;
+}
+
+/** No key means no solver can run, so there is nothing to attempt and nothing to report. */
+export function hasSolverService(apiKeys?: CaptchaApiKeys) {
+    return Boolean(apiKeys?.nopecha?.trim() || apiKeys?.twoCaptcha?.trim() || apiKeys?.capsolver?.trim());
+}
+
+let lastManualNoticeAt = 0;
+const MANUAL_NOTICE_INTERVAL_MS = 60_000;
+
+/**
+ * hCaptcha inserts several iframes per challenge and the claim path retries, so an unthrottled
+ * message here becomes hundreds of lines. Say it once a minute at most.
+ */
+export function noticeManualCaptcha(context: string) {
+    if (Date.now() - lastManualNoticeAt < MANUAL_NOTICE_INTERVAL_MS) return;
+    lastManualNoticeAt = Date.now();
+    console.log(`[QuestMaster] Discord is asking for a captcha (${context}). Solve it in Discord and this will carry on. No captcha service key is set, so nothing is being attempted automatically.`);
+}
+
 export async function bypassCaptcha(
     challenge: CaptchaChallenge,
     servicePreference?: string,
-    apiKeys?: {
-        nopecha?: string;
-        twoCaptcha?: string;
-        capsolver?: string;
-    }
+    apiKeys?: CaptchaApiKeys
 ): Promise<CaptchaBypassResult> {
+    // Without a key the only outcome is a failed attempt and a wall of logs. Hand it to the user.
+    if (!hasSolverService(apiKeys)) {
+        noticeManualCaptcha("claim");
+        return { success: false, error: "No captcha service configured; solve it manually" };
+    }
+
     console.log("[CaptchaSolver] Attempting to solve captcha...", challenge);
 
     if (challenge.captcha_sitekey) {
@@ -523,12 +549,8 @@ export async function bypassCaptcha(
         }
     }
 
-    console.warn("[CaptchaSolver] All solve methods failed");
-    console.warn("[CaptchaSolver] Available options:");
-    console.warn("  1. Get NopeCHA API key (100/day FREE) at nopecha.com");
-    console.warn("  2. Get 2Captcha API key at 2captcha.com");
-    console.warn("  3. Get CapSolver API key at capsolver.com");
-    console.warn("  4. Solve manually");
+    // One line, not six. The key is already configured, so the advert for buying one is noise.
+    console.warn("[CaptchaSolver] Every configured solver failed. Solve the captcha in Discord to continue.");
 
     return {
         success: false,
@@ -538,51 +560,56 @@ export async function bypassCaptcha(
 
 export function setupCaptchaMonitor(
     servicePreference?: string,
-    apiKeys?: {
-        nopecha?: string;
-        twoCaptcha?: string;
-        capsolver?: string;
-    }
+    apiKeys?: CaptchaApiKeys
 ) {
-    console.log("[CaptchaSolver] Setting up captcha monitor...");
+    const canAutoSolve = hasSolverService(apiKeys);
+
+    console.log(canAutoSolve
+        ? "[CaptchaSolver] Watching for captchas, with a solver configured."
+        : "[CaptchaSolver] Watching for captchas. None are configured, so any that appear are yours to solve.");
+
+    // One challenge inserts a checkbox frame and a challenge frame, and hCaptcha re-inserts them
+    // as it runs. Handle a given sitekey once rather than once per iframe.
+    let handlingSitekey: string | null = null;
 
     const observer = new MutationObserver(async mutations => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
-                if (node instanceof HTMLElement) {
-                    if (node instanceof HTMLIFrameElement) {
-                        console.log("[CaptchaSolver] 📋 Iframe detected:", node.src);
-                    }
+                if (!(node instanceof HTMLElement)) continue;
 
-                    const iframe = node.querySelector ?
-                        node.querySelector("iframe[src*=\"hcaptcha.com\"]") :
-                        null;
+                const iframe = node.querySelector
+                    ? node.querySelector("iframe[src*=\"hcaptcha.com\"]")
+                    : null;
+                const isCaptcha = iframe || (node instanceof HTMLIFrameElement && node.src.includes("hcaptcha.com"));
+                if (!isCaptcha) continue;
 
-                    if (iframe || (node instanceof HTMLIFrameElement && node.src.includes("hcaptcha.com"))) {
-                        console.log("[CaptchaSolver] 🔍 hCaptcha iframe detected!");
-                        console.log("[CaptchaSolver] Iframe src:",
-                            iframe ? (iframe as HTMLIFrameElement).src : (node as HTMLIFrameElement).src
-                        );
+                const iframeSrc = iframe ? (iframe as HTMLIFrameElement).src : (node as HTMLIFrameElement).src;
+                const sitekey = iframeSrc.match(/sitekey=([^&]+)/)?.[1];
 
-                        const iframeSrc = iframe ? (iframe as HTMLIFrameElement).src : (node as HTMLIFrameElement).src;
-                        const sitekeyMatch = iframeSrc.match(/sitekey=([^&]+)/);
-                        const sitekey = sitekeyMatch ? sitekeyMatch[1] : undefined;
+                // Nothing to do but let the user see it. Saying so repeatedly does not help.
+                if (!canAutoSolve) {
+                    noticeManualCaptcha("shown in Discord");
+                    continue;
+                }
 
-                        const challenge: CaptchaChallenge = {
-                            captcha_sitekey: sitekey,
-                            captcha_service: "hcaptcha"
-                        };
+                if (!sitekey || sitekey === handlingSitekey) continue;
+                handlingSitekey = sitekey;
 
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
 
-                        const result = await bypassCaptcha(challenge, servicePreference, apiKeys);
-                        if (result.success) {
-                            console.log("[CaptchaSolver] ✅ Auto-solved captcha!");
-                        } else {
-                            console.log("[CaptchaSolver] ❌ Auto-solve failed");
-                            console.log("[CaptchaSolver]", result.error);
-                        }
-                    }
+                    const result = await bypassCaptcha(
+                        { captcha_sitekey: sitekey, captcha_service: "hcaptcha" },
+                        servicePreference,
+                        apiKeys,
+                    );
+
+                    console.log(result.success
+                        ? "[CaptchaSolver] Solved the captcha."
+                        : `[CaptchaSolver] Could not solve it (${result.error}). Solve it in Discord to continue.`);
+                } finally {
+                    // Released so a genuinely new challenge is still handled.
+                    handlingSitekey = null;
                 }
             }
         }
