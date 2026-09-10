@@ -19,7 +19,7 @@ import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
 import { devQuests, devRestAPI, isDevMode } from "./utils/dev";
-import { readTaskProgress, resolveQuestApplication, resolveTaskName } from "./utils/quest";
+import { questTaskConfig, readTaskProgress, resolveQuestApplication, resolveTaskName, taskFor, taskKeys } from "./utils/quest";
 import { createController, getController, removeController, setGlobalPause } from "./utils/questControl";
 import { callWithRetry } from "./utils/retry";
 import { checkForUpdate } from "./utils/updateCheck";
@@ -50,6 +50,23 @@ const rewardPreferenceCache = new Map<string, boolean>();
  */
 const claimBackoff = new Map<string, number>();
 const CLAIM_CAPTCHA_BACKOFF_MS = 2 * 60 * 1000;
+
+/**
+ * Task types nobody can drive from inside Discord, and what to tell the user about each.
+ *
+ * Named one at a time rather than matched on a shared prefix. `ACHIEVEMENT_IN_ACTIVITY` and
+ * `ACHIEVEMENT_IN_GAME` differ by one word and need opposite advice: the first is an activity you
+ * launch from the quest and play inside Discord, the second wants an achievement earned in the
+ * retail game with the game linked to your account, and cannot be launched from the quest at all.
+ * A substring match told everyone the first answer.
+ *
+ * A new `ACHIEVEMENT_*` key that is not listed here deliberately falls through to the unknown-task
+ * branch, which names the keys Discord offered and turns it into a lead rather than a guess.
+ */
+const MANUAL_TASKS: Record<string, string> = {
+    ACHIEVEMENT_IN_ACTIVITY: "launch it from the quest and play",
+    ACHIEVEMENT_IN_GAME: "play the game itself, with it linked to your account",
+};
 
 /**
  * Which setting switches each task type off. Only these five ever reach here, because a quest
@@ -685,19 +702,21 @@ function completeQuest(quest: QuestValue) {
     const pid = Math.floor(Math.random() * 30000) + 1000;
 
     const { questName } = quest.config.messages;
-    const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
-    const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig?.tasks?.[x] != null);
+    const taskConfig = questTaskConfig(quest);
+    const taskName = resolveTaskName(quest);
     if (!taskName) {
-        const offered = Object.keys(taskConfig?.tasks ?? {});
+        const offered = taskKeys(taskConfig);
 
-        // These are Discord Activities: an embedded game you launch and play inside Discord.
-        // Progress comes from actually playing, so there is nothing to spoof and nothing broken.
-        if (offered.some(k => k.includes("ACHIEVEMENT"))) {
-            console.log("Play-it-yourself quest:", questName, "(Discord Activity)");
+        // Progress on these comes from really playing, so there is nothing to spoof and nothing
+        // is broken. Which kind of playing depends on the key, so read it rather than assume.
+        const manual = offered.find(k => MANUAL_TASKS[k] != null);
+        if (manual) {
+            console.log("Play-it-yourself quest:", questName, `(${manual})`);
             setQuestRuntime(quest.id, {
                 name: questName,
+                taskName: manual,
                 status: "manual",
-                why: "launch it from the quest and play",
+                why: MANUAL_TASKS[manual],
             });
             return;
         }
@@ -718,7 +737,7 @@ function completeQuest(quest: QuestValue) {
 
     // Resolve the application only after the task is known, since newer quests store it
     // per task rather than on the quest config.
-    const taskData = taskConfig.tasks[taskName];
+    const taskData = taskFor(taskConfig, taskName);
     const { id: applicationId, name: applicationName } = resolveQuestApplication(quest, taskData);
 
     const secondsNeeded = taskData.target;

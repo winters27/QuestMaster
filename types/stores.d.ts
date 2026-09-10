@@ -11,6 +11,7 @@ export type QuestsStore = {
     removeChangeListener: (listener: () => void) => void;
     quests: Map<string, QuestValue>;
 };
+export type SortedVoiceStateStore = any;
 export type ChannelStore = any;
 export type GuildChannelStore = {
     getAllGuilds(): Map<string, GuildData>;

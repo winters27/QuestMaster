@@ -66,6 +66,8 @@ const TASK_LABELS: Record<string, string> = {
     PLAY_ACTIVITY: "activity",
     WATCH_VIDEO: "watch",
     WATCH_VIDEO_ON_MOBILE: "watch",
+    ACHIEVEMENT_IN_ACTIVITY: "achievement",
+    ACHIEVEMENT_IN_GAME: "achievement",
 };
 
 /** Stands in for the game art when Discord ships none, so every row still has something to read. */
@@ -75,6 +77,8 @@ const TASK_PATHS: Record<string, string> = {
     PLAY_ACTIVITY: "M12 2 9.2 8.8 2 9.6l5.4 4.7L5.8 22 12 18.3 18.2 22l-1.6-7.7L22 9.6l-7.2-.8L12 2Z",
     WATCH_VIDEO: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm6 3.5v9l7-4.5-7-4.5Z",
     WATCH_VIDEO_ON_MOBILE: "M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2Zm3 19h4v-1h-4v1Zm0-16v10l6-5-6-5Z",
+    ACHIEVEMENT_IN_ACTIVITY: "M5 3h14v2h3v4a4 4 0 0 1-4 4h-.5A6 6 0 0 1 13 15.9V19h4v2H7v-2h4v-3.1A6 6 0 0 1 6.5 13H6a4 4 0 0 1-4-4V5h3V3Zm0 4H4v2a2 2 0 0 0 1 1.7V7Zm14 3.7A2 2 0 0 0 20 9V7h-1v3.7Z",
+    ACHIEVEMENT_IN_GAME: "M5 3h14v2h3v4a4 4 0 0 1-4 4h-.5A6 6 0 0 1 13 15.9V19h4v2H7v-2h4v-3.1A6 6 0 0 1 6.5 13H6a4 4 0 0 1-4-4V5h3V3Zm0 4H4v2a2 2 0 0 0 1 1.7V7Zm14 3.7A2 2 0 0 0 20 9V7h-1v3.7Z",
 };
 
 const ORB_PATH = "M12 2 21.5 12 12 22 2.5 12 12 2Z";
@@ -170,7 +174,7 @@ function buildRows(runtime: Map<string, QuestRuntime>) {
             continue;
         }
         if (rt?.status === "running") {
-            running.push({ ...base, task: rt.taskName, value: rt.value, target: rt.target, actions: ["pause", "stop"] });
+            running.push({ ...base, task: rt.taskName, why: rt.why, value: rt.value, target: rt.target, actions: ["pause", "stop"] });
             continue;
         }
         if (quest.userStatus?.completedAt) {
@@ -244,7 +248,7 @@ function RowActions({ row }: { row: Row; }) {
     );
 }
 
-function QuestRow({ row, showBar, tone }: { row: Row; showBar: boolean; tone?: "manual"; }) {
+function QuestRow({ row, showBar }: { row: Row; showBar: boolean; }) {
     const pct = row.target > 0 ? Math.min(100, Math.round((row.value / row.target) * 100)) : 0;
     const minsLeft = row.target > row.value ? Math.ceil((row.target - row.value) / 60) : 0;
     const paused = row.why === "paused";
@@ -276,8 +280,7 @@ function QuestRow({ row, showBar, tone }: { row: Row; showBar: boolean; tone?: "
                         <div className={`qm-fill${fillClass}`} style={{ width: `${pct}%` }} />
                     </div>
                 )}
-                {/* Manual rows say nothing per-row: the section explains it once, above them all. */}
-                {(row.task || row.why || showBar) && tone !== "manual" && (
+                {(row.task || row.why || showBar) && (
                     <div className="qm-row-meta">
                         <span>{row.task ? TASK_LABELS[row.task] ?? row.task.toLowerCase() : ""}</span>
                         {row.why
@@ -307,7 +310,7 @@ function OpenQuestPageButton() {
     );
 }
 
-function Section({ title, rows, showBar, note, tone, action }: { title: string; rows: Row[]; showBar: boolean; note?: string; tone?: "manual"; action?: React.ReactNode; }) {
+function Section({ title, rows, showBar, note, action }: { title: string; rows: Row[]; showBar: boolean; note?: string; action?: React.ReactNode; }) {
     if (!rows.length) return null;
 
     return (
@@ -318,7 +321,7 @@ function Section({ title, rows, showBar, note, tone, action }: { title: string; 
             </div>
             {/* Explain the group before listing it, then offer the action once, after. */}
             {note && <div className="qm-section-note">{note}</div>}
-            {rows.map(row => <QuestRow key={row.id} row={row} showBar={showBar} tone={tone} />)}
+            {rows.map(row => <QuestRow key={row.id} row={row} showBar={showBar} />)}
             {action}
         </>
     );
@@ -382,6 +385,17 @@ function useChangelog(open: boolean) {
     return entries;
 }
 
+/** What the update check last found, short enough to sit at the end of a row. */
+function updateHint(state: ReturnType<typeof getUpdateState>): string {
+    switch (state.status) {
+        case "checking": return "checking";
+        case "available": return `v${state.latest} available`;
+        case "current": return "up to date";
+        case "failed": return "check failed";
+        default: return "";
+    }
+}
+
 /** True until the changelog has been opened on this version. */
 function hasUnreadChangelog() {
     return settings.store.seenChangelogVersion !== PLUGIN_VERSION;
@@ -423,7 +437,7 @@ const TYPE_SETTINGS: Array<[string, string, keyof typeof settings.store]> = [
     ["Activities", "Heartbeats the activity without opening it.", "taskPlayActivity"],
 ];
 
-function SettingsView({ onBack }: { onBack: () => void; }) {
+function SettingsView({ onBack, onWhatsNew }: { onBack: () => void; onWhatsNew: () => void; }) {
     const [note, setNote] = useState<string | null>(null);
 
     return (
@@ -468,9 +482,19 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
             </div>
             {note && <div className="qm-section-note">{note}</div>}
 
-            <div className="qm-settings-foot">
-                <span>v{PLUGIN_VERSION}</span>
-                <button className="qm-link-btn" onClick={openQuestHome}>Open Quests page</button>
+            <div className="qm-section">About</div>
+            <div className="qm-about">
+                <button className="qm-about-row" onClick={onWhatsNew}>
+                    <span>What&apos;s new{hasUnreadChangelog() && <span className="qm-pill">new</span>}</span>
+                    <span className="qm-about-hint">v{PLUGIN_VERSION}</span>
+                </button>
+                <button className="qm-about-row" onClick={() => { checkForUpdate(true); setNote("Checking for updates."); }}>
+                    <span>Check for updates</span>
+                    <span className="qm-about-hint">{updateHint(getUpdateState())}</span>
+                </button>
+                <button className="qm-about-row" onClick={openQuestHome}>
+                    <span>Open Discord&apos;s Quests page</span>
+                </button>
             </div>
         </div>
     );
@@ -665,25 +689,6 @@ export function QuestPanel() {
                     )}
                 </Hint>
 
-                <Hint text="What's new">
-                    {hint => (
-                        <button
-                            className="qm-icon-btn"
-                            aria-label="What's new"
-                            {...hint}
-                            onClick={() => {
-                                settings.store.seenChangelogVersion = PLUGIN_VERSION;
-                                setView(v => v === "changelog" ? "list" : "changelog");
-                            }}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5ZM8 12h8v2H8v-2Zm0 4h8v2H8v-2Z" />
-                            </svg>
-                            {hasUnreadChangelog() && <span className="qm-icon-badge" />}
-                        </button>
-                    )}
-                </Hint>
-
                 <Hint text="Settings">
                     {hint => (
                         <button
@@ -695,34 +700,7 @@ export function QuestPanel() {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm9.4-2c0-.5 0-1-.1-1.5l2-1.5-2-3.5-2.4 1a7.6 7.6 0 0 0-2.5-1.5L16 2H8l-.4 2.5c-.9.3-1.7.8-2.5 1.5l-2.4-1-2 3.5 2 1.5a9 9 0 0 0 0 3l-2 1.5 2 3.5 2.4-1c.8.7 1.6 1.2 2.5 1.5L8 22h8l.4-2.5c.9-.3 1.7-.8 2.5-1.5l2.4 1 2-3.5-2-1.5c.1-.5.1-1 .1-1.5Z" />
                             </svg>
-                        </button>
-                    )}
-                </Hint>
-
-                <Hint text="Check for updates">
-                    {hint => (
-                        <button
-                            className="qm-icon-btn"
-                            {...hint}
-                            onClick={() => checkForUpdate(true)}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z" />
-                            </svg>
-                        </button>
-                    )}
-                </Hint>
-
-                <Hint text="Open Discord's quest page">
-                    {hint => (
-                        <button
-                            className="qm-icon-btn"
-                            {...hint}
-                            onClick={openQuestHome}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M14 3v2h3.6l-9.3 9.3 1.4 1.4L19 6.4V10h2V3h-7Z M19 19H5V5h5V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5h-2v5Z" />
-                            </svg>
+                            {hasUnreadChangelog() && <span className="qm-icon-badge" />}
                         </button>
                     )}
                 </Hint>
@@ -753,7 +731,15 @@ export function QuestPanel() {
                 ))}
             </div>}
 
-            {view === "settings" && <SettingsView onBack={() => setView("list")} />}
+            {view === "settings" && (
+                <SettingsView
+                    onBack={() => setView("list")}
+                    onWhatsNew={() => {
+                        settings.store.seenChangelogVersion = PLUGIN_VERSION;
+                        setView("changelog");
+                    }}
+                />
+            )}
             {view === "changelog" && <ChangelogView onBack={() => setView("list")} />}
 
             {view === "list" && <div className="qm-body">
@@ -767,8 +753,7 @@ export function QuestPanel() {
                                 title="Play these yourself"
                                 rows={manual}
                                 showBar={false}
-                                tone="manual"
-                                note="These run as an Activity inside Discord: the game loads in Discord's own window and progress only counts while you actually play, so there is nothing to automate."
+                                note="Progress on these only counts while you are really playing, so there is nothing to spoof. Each row says what it needs."
                                 action={<OpenQuestPageButton />}
                             />
                             <Section title="Skipped" rows={skipped} showBar={false} />

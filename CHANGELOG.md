@@ -16,9 +16,16 @@ nested lists. Links and emphasis are stripped when the panel renders it.
 - Every quest row shows the game art Discord ships with it, or an icon for the task type when it ships none.
 - The header says what the plugin is doing in words, not just as a coloured dot.
 - The panel button carries a count: green for rewards waiting, amber for quests outstanding, a pause mark while everything is held.
-- Settings live in the panel now, behind the gear: what to accept and claim, and a switch for each quest type. Maintenance there can retry everything that failed, or empty the skip list.
+- Settings live in the panel now, behind the gear: what to accept and claim, a switch for each quest type, retrying everything that failed, emptying the skip list, and About with the changelog and the update check. The header keeps three buttons so it has room to say what the plugin is doing.
 - Drag the panel by its header and it stays where you put it. Esc closes it.
 - What's new: this file, in the panel, marked until you have read it.
+- Stream quests say what they are waiting for: going live, or someone joining the call. They used to sit at nothing with no explanation, because this is the one quest type with no time limit and so no watchdog to notice.
+- Quests that need an achievement earned in the game itself no longer say to launch them from the quest. That advice is right for activity achievements and wrong for these, and the two were being told apart by a shared word in the name.
+- Two stream quests at once no longer leave the client spoofing after both have finished. Only one of them can hold the stream, and the other now says so instead of sitting at zero.
+- Game quests no longer hide the game you are really playing. The spoof used to stand in for what was running instead of adding to it, so for as long as a quest ran, Discord could not see your actual game.
+- A heartbeat Discord tried and failed no longer looks like Discord going quiet. Those are read now, the reason is named, and a quest survives a failed beat instead of being abandoned half a minute before Discord tries again.
+- Quests wait longer before giving up. The old window was set on the belief that Discord reports every 30 seconds; it appears to be every minute, which made the window shorter than intended rather than longer.
+- Quests keep working if Discord changes how it sends a quest task list. One of the two shapes it can arrive in would have made every quest read as unsupported.
 - Testing hook: set window.__questMasterDev before the plugin starts to run it against your own quests and your own request layer, so nothing reaches Discord.
 
 ## 1.3.0 - 2026-07-29

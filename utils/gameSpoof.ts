@@ -32,6 +32,21 @@ export function getSpoofedGames() {
     return [...spoofed.values()];
 }
 
+function realGames(): any[] {
+    const games = real.getRunningGames?.call(store);
+    return Array.isArray(games) ? games : [];
+}
+
+/**
+ * What Discord should believe is running: the games really running, plus ours.
+ *
+ * Also the right payload for a `RUNNING_GAMES_CHANGE` dispatch, which must describe the whole set
+ * rather than only our half of it.
+ */
+export function getAllGames(): any[] {
+    return store ? [...realGames(), ...getSpoofedGames()] : getSpoofedGames();
+}
+
 function patch(target: any) {
     if (store) return;
     store = target;
@@ -40,18 +55,37 @@ function patch(target: any) {
         if (typeof target[name] === "function") real[name] = target[name];
     }
 
-    target.getRunningGames = () => getSpoofedGames();
-    target.getGameForPID = (pid: number) => getSpoofedGames().find(g => g.pid === pid);
+    // Add to what is really running rather than standing in for it. Replacing the answer meant
+    // that for as long as a quest ran, Discord could not see the game you were actually playing,
+    // and everything keyed on that went with it.
+    target.getRunningGames = () => [...realGames(), ...getSpoofedGames()];
+    target.getGameForPID = (pid: number) =>
+        getSpoofedGames().find(g => g.pid === pid) ?? real.getGameForPID?.call(target, pid);
 
-    if (real.getVisibleGame) target.getVisibleGame = () => getSpoofedGames()[0] ?? null;
-    if (real.getVisibleRunningGames) target.getVisibleRunningGames = () => getSpoofedGames();
-    if (real.getCandidateGames) target.getCandidateGames = () => getSpoofedGames();
+    if (real.getVisibleGame) {
+        target.getVisibleGame = () => getSpoofedGames()[0] ?? real.getVisibleGame.call(target);
+    }
+    if (real.getVisibleRunningGames) {
+        target.getVisibleRunningGames = () => {
+            const games = real.getVisibleRunningGames.call(target);
+            return [...(Array.isArray(games) ? games : []), ...getSpoofedGames()];
+        };
+    }
+    if (real.getCandidateGames) {
+        target.getCandidateGames = () => {
+            const games = real.getCandidateGames.call(target);
+            return [...(Array.isArray(games) ? games : []), ...getSpoofedGames()];
+        };
+    }
     if (real.getRunningDiscordApplicationIds) {
         target.getRunningDiscordApplicationIds = () => {
-            // The collection type varies by build, so match whatever the real one returns.
+            // This used to read the real ids and then throw them away, keeping them only to see
+            // whether the collection was a Set. Merge into whatever shape came back.
             const ids = real.getRunningDiscordApplicationIds.call(target);
             const ours = getSpoofedGames().map(g => String(g.id));
-            return ids instanceof Set ? new Set(ours) : ours;
+
+            if (ids instanceof Set) return new Set([...ids, ...ours]);
+            return [...(Array.isArray(ids) ? ids : []), ...ours];
         };
     }
 }
