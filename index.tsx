@@ -19,7 +19,7 @@ import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
 import { devQuests, devRestAPI, isDevMode } from "./utils/dev";
-import { questTaskConfig, readTaskProgress, resolveQuestApplication, resolveTaskName, taskFor, taskKeys } from "./utils/quest";
+import { BYPASS_TASK, questTaskConfig, readTaskProgress, resolveQuestApplication, resolveTaskName, taskFor, taskKeys } from "./utils/quest";
 import { createController, getController, removeController, setGlobalPause } from "./utils/questControl";
 import { callWithRetry } from "./utils/retry";
 import { checkForUpdate } from "./utils/updateCheck";
@@ -67,6 +67,13 @@ const MANUAL_TASKS: Record<string, string> = {
     ACHIEVEMENT_IN_ACTIVITY: "launch it from the quest and play",
     ACHIEVEMENT_IN_GAME: "play the game itself, with it linked to your account",
 };
+
+/**
+ * The one manual type that has an alternative, so the row can point at it rather than only saying
+ * to go and play. Left out of MANUAL_TASKS' wording because it is only true while the switch is
+ * off, and the row is drawn either way.
+ */
+const BYPASSABLE_NOTE = "launch it from the quest and play, or turn on the bypass in Settings";
 
 /**
  * Which setting switches each task type off. Only these five ever reach here, because a quest
@@ -703,7 +710,11 @@ function completeQuest(quest: QuestValue) {
 
     const { questName } = quest.config.messages;
     const taskConfig = questTaskConfig(quest);
-    const taskName = resolveTaskName(quest);
+
+    // The bypass adds one runnable type, behind its setting. Checked after the ordinary ones, so a
+    // quest that can be finished by spoofing this client alone is never authorized instead.
+    const taskName = resolveTaskName(quest)
+        ?? (settings.store.achievementBypass && taskFor(taskConfig, BYPASS_TASK) != null ? BYPASS_TASK : undefined);
     if (!taskName) {
         const offered = taskKeys(taskConfig);
 
@@ -716,7 +727,7 @@ function completeQuest(quest: QuestValue) {
                 name: questName,
                 taskName: manual,
                 status: "manual",
-                why: MANUAL_TASKS[manual],
+                why: manual === BYPASS_TASK ? BYPASSABLE_NOTE : MANUAL_TASKS[manual],
             });
             return;
         }
@@ -750,7 +761,7 @@ function completeQuest(quest: QuestValue) {
 
     // Without a real application id the spoofed process is one Discord can never match to the
     // quest, so it would idle at 0% instead of failing. Say so rather than sitting silent.
-    if (!applicationId && (taskName === "PLAY_ON_DESKTOP" || taskName === "STREAM_ON_DESKTOP")) {
+    if (!applicationId && (taskName === "PLAY_ON_DESKTOP" || taskName === "STREAM_ON_DESKTOP" || taskName === BYPASS_TASK)) {
         console.error(`[QuestMaster] No application id found for "${questName}" (${taskName}). Discord may have moved it again. Skipping this quest.`);
         setQuestRuntime(quest.id, { name: questName, taskName, status: "skipped", why: "no application id" });
         completingQuest.set(quest.id, false);

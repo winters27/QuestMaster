@@ -26,6 +26,7 @@ nested lists. Links and emphasis are stripped when the panel renders it.
 - A heartbeat Discord tried and failed no longer looks like Discord going quiet. Those are read now, the reason is named, and a quest survives a failed beat instead of being abandoned half a minute before Discord tries again.
 - Quests wait longer before giving up. The old window was set on the belief that Discord reports every 30 seconds; it appears to be every minute, which made the window shorter than intended rather than longer.
 - Quests keep working if Discord changes how it sends a quest task list. One of the two shapes it can arrive in would have made every quest read as unsupported.
+- Activity achievement quests can now be completed without playing them, behind a switch that is off until you turn it on. It is the only thing here that acts on your account rather than on your client: it authorizes the quest app on your account, reports progress to that activity, then revokes the authorization. Read the note above the switch before turning it on. Age-gated activities still refuse, and quests needing an achievement in a real game cannot be done at all.
 - Testing hook: set window.__questMasterDev before the plugin starts to run it against your own quests and your own request layer, so nothing reaches Discord.
 
 ## 1.3.0 - 2026-07-29

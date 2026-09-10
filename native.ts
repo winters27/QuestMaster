@@ -75,3 +75,67 @@ export async function readChangelog(_: IpcMainInvokeEvent): Promise<string | nul
         return null;
     }
 }
+
+/**
+ * The two requests the achievement bypass makes to an activity's own backend.
+ *
+ * Discord's renderer forbids `connect-src` to `*.discordsays.com`, so these cannot be sent from
+ * the plugin's UI half at all. They run here instead, where that policy does not apply.
+ *
+ * Three deliberate restrictions, because this is the one part of the plugin that talks to a host
+ * outside Discord while carrying an authorization:
+ *
+ * - The caller passes an application id, never a URL. The address is built here, so nothing the
+ *   renderer sends can point these requests somewhere else.
+ * - That id must be digits. It is interpolated into a hostname, and a malformed one would move the
+ *   request to another host entirely.
+ * - Redirects are refused rather than followed, so a 3xx cannot carry the auth token or the proxy
+ *   ticket in the referrer off to somewhere that was never authorized.
+ */
+
+const APP_ID = /^\d+$/;
+
+export interface DiscordSaysResponse {
+    ok: boolean;
+    status: number;
+    body: string;
+}
+
+async function postToActivity(appId: string, path: string, headers: Record<string, string>, body: string): Promise<DiscordSaysResponse> {
+    if (!APP_ID.test(appId)) {
+        throw new Error(`Refusing a non-numeric application id: ${appId}`);
+    }
+
+    const res = await fetch(`https://${appId}.discordsays.com/.proxy/acf/${path}`, {
+        method: "POST",
+        headers,
+        body,
+        redirect: "error",
+    });
+
+    return { ok: res.ok, status: res.status, body: await res.text() };
+}
+
+export async function discordSaysAuthorize(
+    _: IpcMainInvokeEvent,
+    opts: { appId: string; questId: string; authCode: string; referrer: string; },
+): Promise<DiscordSaysResponse> {
+    return postToActivity(opts.appId, "authorize", {
+        "Content-Type": "application/json",
+        "X-Auth-Token": "",
+        "X-Discord-Quest-ID": opts.questId,
+        Referer: opts.referrer,
+    }, JSON.stringify({ code: opts.authCode }));
+}
+
+export async function discordSaysProgress(
+    _: IpcMainInvokeEvent,
+    opts: { appId: string; questId: string; token: string; target: number; referrer: string; },
+): Promise<DiscordSaysResponse> {
+    return postToActivity(opts.appId, "quest/progress", {
+        "Content-Type": "application/json",
+        "X-Auth-Token": opts.token,
+        "X-Discord-Quest-ID": opts.questId,
+        Referer: opts.referrer,
+    }, JSON.stringify({ progress: opts.target }));
+}

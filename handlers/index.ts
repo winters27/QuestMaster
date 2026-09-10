@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { achievementHandler } from "./achievement";
 import { playActivityHandler } from "./playActivity";
 import { playOnDesktopHandler } from "./playOnDesktop";
 import { streamOnDesktopHandler } from "./streamOnDesktop";
@@ -14,5 +15,6 @@ export const questHandlers: QuestHandler[] = [
     videoHandler,
     playOnDesktopHandler,
     streamOnDesktopHandler,
-    playActivityHandler
+    playActivityHandler,
+    achievementHandler
 ];

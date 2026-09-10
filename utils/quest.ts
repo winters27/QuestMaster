@@ -89,6 +89,14 @@ export function questTaskConfig(quest: QuestValue): any {
     return (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
 }
 
+/**
+ * Reachable only with the achievement bypass switched on, and always last.
+ *
+ * A quest offering this alongside something spoofable should take the spoofable one: that path
+ * touches nothing but this client, and this one authorizes an application on the account.
+ */
+export const BYPASS_TASK = "ACHIEVEMENT_IN_ACTIVITY";
+
 /** The task this plugin would actually run for a quest, or undefined if it supports none of them. */
 export function resolveTaskName(quest: QuestValue): SupportedTask | undefined {
     const taskConfig = questTaskConfig(quest);

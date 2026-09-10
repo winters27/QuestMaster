@@ -77,6 +77,12 @@ export default definePluginSettings({
         description: "Show a toast when a quest reward becomes claimable. One per quest, not one per check.",
         default: true,
     },
+    achievementBypass: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Complete activity achievement quests without playing them. This is the only setting here that acts on your account rather than on your client: it OAuth-authorizes each quest's application on your account, reports progress to that activity's own backend, then revokes the authorization. Forging progress with a logged-in account is what Discord has been enforcing against, and enforcement reaches the whole account. Off unless you turn it on.",
+        default: false,
+    },
     taskWatchVideo: {
         type: OptionType.BOOLEAN,
         description: "Run video quests. Fully automatic.",

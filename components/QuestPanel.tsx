@@ -457,6 +457,19 @@ function SettingsView({ onBack, onWhatsNew }: { onBack: () => void; onWhatsNew: 
                 <SettingRow key={key} label={label} note={text} setting={key} />
             ))}
 
+            <div className="qm-section">Achievement quests</div>
+            <div className="qm-section-note">
+                Everything above lies to your own client. This one acts on your account: it authorizes
+                each quest&apos;s app on it, reports progress to that activity, then revokes the
+                authorization. Forging progress with a logged-in account is what Discord enforces
+                against, and enforcement reaches the account, not just the reward.
+            </div>
+            <SettingRow
+                label="Complete them without playing"
+                note="Off unless you turn it on. Age-gated activities still refuse."
+                setting="achievementBypass"
+            />
+
             <div className="qm-section">Maintenance</div>
             <div className="qm-actions">
                 <Button
