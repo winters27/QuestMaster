@@ -13,6 +13,11 @@ nested lists. Links and emphasis are stripped when the panel renders it.
 - Each quest shows what it pays in orbs, the claim section shows how many are waiting, and the stats strip totals the ones already claimed.
 - Switches for each quest type, so you can leave stream quests alone and still run everything else. A type you switch off is neither accepted nor started.
 - A toast when a reward becomes claimable. One per quest, and it can be switched off.
+- Every quest row shows the game art Discord ships with it, or an icon for the task type when it ships none.
+- The header says what the plugin is doing in words, not just as a coloured dot.
+- The panel button carries a count: green for rewards waiting, amber for quests outstanding, a pause mark while everything is held.
+- Settings live in the panel now, behind the gear: what to accept and claim, and a switch for each quest type. Maintenance there can retry everything that failed, or empty the skip list.
+- Drag the panel by its header and it stays where you put it. Esc closes it.
 - What's new: this file, in the panel, marked until you have read it.
 - Testing hook: set window.__questMasterDev before the plugin starts to run it against your own quests and your own request layer, so nothing reaches Discord.
 

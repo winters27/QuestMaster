@@ -88,7 +88,13 @@
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
+
+  /* The header is the drag handle, so it should not select as text while you drag it. */
+  cursor: grab;
+  user-select: none;
 }
+
+.qm-panel-header:active { cursor: grabbing; }
 
 .qm-panel-title {
   font-size: 15px;
@@ -234,6 +240,9 @@
 }
 
 .qm-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
   padding: 9px 16px 11px;
 }
 
@@ -328,7 +337,10 @@
 }
 
 .qm-row-orbs {
+  display: inline-flex;
   flex: none;
+  gap: 3px;
+  align-items: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-warning, #f0b232);
@@ -370,9 +382,10 @@
   color: var(--interactive-active, #f2f3f5);
 }
 
-/* A paused bar should not read as a working one, so it dims rather than only stopping. */
+/* A paused bar should read as held, rather than as progress that stopped for no reason. */
 .qm-fill-paused {
-  opacity: 0.5;
+  background: var(--text-warning, #f0b232);
+  opacity: 0.6;
 }
 
 .qm-dot-paused { background: var(--text-warning, #f0b232); }
@@ -462,4 +475,124 @@
 
 .qm-hint-below {
   transform: translate(-50%, 0);
+}
+
+
+.qm-panel-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted, #949ba4);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qm-panel-status-paused { color: var(--text-warning, #f0b232); }
+
+
+.qm-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qm-row-tile {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.qm-row-tile-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-modifier-hover, rgb(255 255 255 / 6%));
+  color: var(--text-muted, #949ba4);
+}
+
+
+
+.qm-row-why-paused { color: var(--text-warning, #f0b232); }
+
+.qm-footer {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px solid var(--background-modifier-accent, rgb(255 255 255 / 6%));
+  color: var(--text-warning, #f0b232);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Launcher badge: a count, not a dot, so it says how much rather than only that there is some. */
+.qm-launcher-badge {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border: 2px solid var(--background-secondary, #2b2d31);
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.qm-badge-claim { background: var(--status-positive, #23a55a); }
+
+.qm-badge-work {
+  background: var(--text-warning, #f0b232);
+  color: #1e1f22;
+}
+.qm-badge-hold { background: var(--background-modifier-selected, #4e5058); }
+
+.qm-setting {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 12px;
+}
+
+.qm-setting-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.qm-setting-label {
+  color: var(--text-normal, #dbdee1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.qm-setting-note {
+  margin-top: 1px;
+  color: var(--text-muted, #949ba4);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.qm-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 8px;
+}
+
+.qm-settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--background-modifier-accent, rgb(255 255 255 / 6%));
+  color: var(--text-muted, #949ba4);
+  font-size: 11px;
 }

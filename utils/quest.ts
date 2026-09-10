@@ -68,3 +68,18 @@ export function resolveTaskName(quest: QuestValue): SupportedTask | undefined {
     const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
     return SUPPORTED_TASKS.find(task => taskConfig?.tasks?.[task] != null);
 }
+
+/**
+ * The game art Discord ships with a quest, or null when it ships none.
+ *
+ * The asset fields hold a path relative to Discord's CDN rather than a URL, and older quests only
+ * carry a bare filename that has to be hung under the quest id.
+ */
+export function questArt(quest: QuestValue): string | null {
+    const assets = (quest.config as any)?.assets ?? {};
+    const relative = assets.gameTileDark
+        ?? assets.gameTileLight
+        ?? (assets.gameTile ? `quests/${quest.id}/${assets.gameTile}` : null);
+
+    return relative ? `https://cdn.discordapp.com/${relative}` : null;
+}

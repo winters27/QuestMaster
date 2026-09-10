@@ -12,7 +12,7 @@
  * controllers and the settings.
  */
 
-import { clearQuestRuntime, setQuestRuntime } from "./questState";
+import { clearQuestRuntime, getQuestRuntime, setQuestRuntime } from "./questState";
 import settings from "./settings";
 import { cancelAllControllers, getController, isGloballyPaused, setGlobalPause } from "./utils/questControl";
 
@@ -111,6 +111,25 @@ export function runNow(questId: string) {
     if (isGloballyPaused()) setPaused(false);
     void startQuest?.(questId);
     return true;
+}
+
+// ---- Bulk actions ------------------------------------------------------
+
+/** Runs every quest the plugin gave up on again. Does not touch ones you stopped yourself. */
+export function retryAllFailed() {
+    const failed = [...getQuestRuntime().values()].filter(rt => rt.status === "skipped");
+    for (const rt of failed) retryQuest(rt.id);
+    return failed.length;
+}
+
+/** Empties the skip list, so everything in it is eligible again on the next scan. */
+export function clearSkipList() {
+    const ids = getSkippedIds();
+    if (ids.size === 0) return 0;
+
+    settings.store.skippedQuestIds = "";
+    for (const id of ids) clearQuestRuntime(id);
+    return ids.size;
 }
 
 // ---- Global pause ------------------------------------------------------

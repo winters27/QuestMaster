@@ -114,6 +114,12 @@ export default definePluginSettings({
         default: false,
         hidden: true,
     },
+    questPanelPosition: {
+        type: OptionType.STRING,
+        description: "Where the panel sits, as left,top. Written when you drag it.",
+        default: "",
+        hidden: true,
+    },
     seenChangelogVersion: {
         type: OptionType.STRING,
         description: "Which version's changelog has been read.",
