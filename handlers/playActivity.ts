@@ -9,8 +9,19 @@ import { findByPropsLazy } from "@webpack";
 import { setQuestRuntime } from "../questState";
 import settings from "../settings";
 import { readTaskProgress } from "../utils/quest";
+import { Cancelled } from "../utils/questControl";
 import { callWithRetry } from "../utils/retry";
 import { QuestHandler } from "./types";
+
+/**
+ * Discord answers every heartbeat, whether or not it is crediting the time. So a stall shows up
+ * as a successful request whose progress never moves, and the loop below would happily send those
+ * forever in silence.
+ *
+ * The heartbeat watchdog in the game and stream handlers does not cover this: it watches for beats
+ * Discord sends us, and here we send them ourselves.
+ */
+const STALLED_POLL_LIMIT = 10;
 
 const VoiceActions = findByPropsLazy("selectVoiceChannel", "selectChannel") as { selectVoiceChannel?: (channelId: string) => void; };
 
@@ -90,7 +101,7 @@ export const playActivityHandler: QuestHandler = {
         return taskName === "PLAY_ACTIVITY";
     },
 
-    handle({ quest, questName, taskName, secondsNeeded, RestAPI, completingQuest, ChannelStore, GuildChannelStore, getSpoofingProfile, onQuestComplete }) {
+    handle({ quest, questName, taskName, secondsNeeded, RestAPI, completingQuest, controller, ChannelStore, GuildChannelStore, getSpoofingProfile, onQuestComplete }) {
         const channelId = resolveVoiceChannelId(ChannelStore, GuildChannelStore);
         if (!channelId) {
             console.error("[CompleteDiscordQuest] No voice channel found to use for quest:", questName);
@@ -105,7 +116,12 @@ export const playActivityHandler: QuestHandler = {
         const playActivity = async () => {
             console.log("Completing quest", questName, "-", quest.config.messages.questName);
 
+            let lastProgress = -1;
+            let stalledPolls = 0;
+
             while (true) {
+                await controller.gate();
+
                 let res;
                 try {
                     res = await callWithRetry(() => RestAPI.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } }), { label: "heartbeat" });
@@ -120,8 +136,20 @@ export const playActivityHandler: QuestHandler = {
                 setQuestRuntime(quest.id, { value: progress, target: secondsNeeded });
                 console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
+                if (progress < secondsNeeded) {
+                    stalledPolls = progress > lastProgress ? 0 : stalledPolls + 1;
+                    lastProgress = progress;
+
+                    if (stalledPolls >= STALLED_POLL_LIMIT) {
+                        console.error(`[QuestMaster] Discord accepted ${stalledPolls} heartbeats for "${questName}" without crediting any time. Giving up rather than sending more.`);
+                        setQuestRuntime(quest.id, { status: "skipped", why: "progress stopped moving" });
+                        completingQuest.set(quest.id, false);
+                        break;
+                    }
+                }
+
                 const { playActivity: playActivityProfile } = getSpoofingProfile();
-                await new Promise(resolve => setTimeout(resolve, playActivityProfile.intervalMs));
+                await controller.sleep(playActivityProfile.intervalMs);
 
                 if (!completingQuest.get(quest.id) || progress >= secondsNeeded) {
                     console.log("Stopping completing quest:", questName);
@@ -141,6 +169,16 @@ export const playActivityHandler: QuestHandler = {
                 }
             }
         };
-        playActivity();
+
+        playActivity().catch(err => {
+            // A stop is the expected way out of the loop, not something to report as a failure.
+            if (err instanceof Cancelled) {
+                completingQuest.set(quest.id, false);
+                return;
+            }
+            console.error("[QuestMaster] Activity quest failed:", questName, err);
+            setQuestRuntime(quest.id, { status: "skipped", why: "activity quest failed" });
+            completingQuest.set(quest.id, false);
+        });
     }
 };

@@ -13,8 +13,11 @@
 /**
  * "manual" is not a failure. Some quests can only be finished by the person playing, so they are
  * separated from things that actually broke; showing them in red taught you to ignore red.
+ *
+ * "paused" and "stopped" are things you did, so they are separated from "skipped", which is the
+ * plugin giving up. Same reasoning: a state you chose should not look like a defect.
  */
-export type QuestRuntimeStatus = "running" | "skipped" | "manual";
+export type QuestRuntimeStatus = "running" | "paused" | "skipped" | "stopped" | "manual";
 
 export interface QuestRuntime {
     id: string;
@@ -25,6 +28,8 @@ export interface QuestRuntime {
     target: number;
     /** Why we gave up. Surfaced in the panel so a failure is not console-only. */
     why?: string;
+    /** Set once the quest has hit the retry ceiling, so the panel can offer a retry. */
+    failed?: boolean;
 }
 
 const runtime = new Map<string, QuestRuntime>();
@@ -59,6 +64,7 @@ export function setQuestRuntime(id: string, patch: Partial<QuestRuntime>) {
         value: patch.value ?? prev?.value ?? 0,
         target: patch.target ?? prev?.target ?? 0,
         why: "why" in patch ? patch.why : prev?.why,
+        failed: "failed" in patch ? patch.failed : prev?.failed,
     };
 
     // Heartbeats land every ~30s and often repeat the same value, so only wake the panel when
@@ -69,7 +75,8 @@ export function setQuestRuntime(id: string, patch: Partial<QuestRuntime>) {
         && prev.status === next.status
         && prev.value === next.value
         && prev.target === next.target
-        && prev.why === next.why) return;
+        && prev.why === next.why
+        && prev.failed === next.failed) return;
 
     runtime.set(id, next);
     emit();

@@ -14,20 +14,21 @@
  */
 
 import { IpcMainInvokeEvent, shell } from "electron";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 
 const UPDATER_NAME = "Run Update.bat";
+const CHANGELOG_NAME = "CHANGELOG.md";
 const PLUGIN_PATH = join("src", "userplugins", "questMaster");
 
-function findUpdater(): string | null {
+function findPluginFile(name: string): string | null {
     // Natives are bundled into Vencord's main-process bundle, so __dirname sits somewhere inside
     // the Vencord checkout. Walk up rather than hardcoding a depth, since that depends on how the
     // bundle happens to be laid out.
     let dir = __dirname;
 
     for (let i = 0; i < 6; i++) {
-        const candidate = join(dir, PLUGIN_PATH, UPDATER_NAME);
+        const candidate = join(dir, PLUGIN_PATH, name);
         if (existsSync(candidate)) return candidate;
 
         const parent = dirname(dir);
@@ -36,6 +37,10 @@ function findUpdater(): string | null {
     }
 
     return null;
+}
+
+function findUpdater(): string | null {
+    return findPluginFile(UPDATER_NAME);
 }
 
 /** Null when the updater cannot be found, which is the signal to hide the link entirely. */
@@ -51,4 +56,22 @@ export async function revealUpdater(_: IpcMainInvokeEvent): Promise<boolean> {
 
     shell.showItemInFolder(path);
     return true;
+}
+
+/**
+ * The changelog for the build that is actually installed, read off disk rather than fetched.
+ *
+ * Fetching it from the repo would describe whatever is newest there, which is not what you are
+ * running, and would lag behind a push by however long the CDN caches. The file next to the
+ * updater is the one that came with this build.
+ */
+export async function readChangelog(_: IpcMainInvokeEvent): Promise<string | null> {
+    const path = findPluginFile(CHANGELOG_NAME);
+    if (!path) return null;
+
+    try {
+        return readFileSync(path, "utf8");
+    } catch {
+        return null;
+    }
 }

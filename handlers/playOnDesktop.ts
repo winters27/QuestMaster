@@ -15,7 +15,7 @@ export const playOnDesktopHandler: QuestHandler = {
         return taskName === "PLAY_ON_DESKTOP";
     },
 
-    handle({ quest, questName, taskName, secondsNeeded, secondsDone, applicationId, applicationName, pid, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, configVersion, onQuestComplete }) {
+    handle({ quest, questName, taskName, secondsNeeded, secondsDone, applicationId, applicationName, pid, isApp, RestAPI, FluxDispatcher, RunningGameStore, completingQuest, controller, configVersion, onQuestComplete }) {
         if (!isApp) {
             console.log("This no longer works in browser for non-video quests. Use the discord desktop app to complete the", questName, "quest!");
             return;
@@ -40,9 +40,25 @@ export const playOnDesktopHandler: QuestHandler = {
             };
 
             const realGames = RunningGameStore.getRunningGames();
-            addSpoofedGame(RunningGameStore, quest.id, fakeGame);
 
-            FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: getSpoofedGames() });
+            let spoofing = false;
+            let announcedRealGames = false;
+            const startSpoof = () => {
+                if (spoofing) return;
+                spoofing = true;
+                addSpoofedGame(RunningGameStore, quest.id, fakeGame);
+                // The real games are only displaced once. Resuming after a pause must not claim
+                // to remove them a second time, because they were never put back.
+                const removed = announcedRealGames ? [] : realGames;
+                announcedRealGames = true;
+                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed, added: [fakeGame], games: getSpoofedGames() });
+            };
+            const stopSpoof = () => {
+                if (!spoofing) return;
+                spoofing = false;
+                removeSpoofedGame(quest.id);
+                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: getSpoofedGames() });
+            };
 
             let cleaned = false;
             let beats = 0;
@@ -61,9 +77,7 @@ export const playOnDesktopHandler: QuestHandler = {
                 cleaned = true;
 
                 clearTimeout(watchdog);
-                removeSpoofedGame(quest.id);
-                FluxDispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: getSpoofedGames() });
-
+                stopSpoof();
                 unsubscribe();
 
                 if (completed) {
@@ -113,8 +127,28 @@ export const playOnDesktopHandler: QuestHandler = {
                 }
             };
 
+            // Pausing has to drop the spoof, not just stop reading. While the fake game is still
+            // in the store Discord keeps crediting time, so a pause that only looked away would
+            // pause nothing. Dropping it also means the watchdog has to stand down, since the
+            // heartbeats stopping is the intended result rather than a fault.
+            controller.onPause = () => {
+                clearTimeout(watchdog);
+                stopSpoof();
+            };
+            controller.onResume = () => {
+                startSpoof();
+                armWatchdog();
+            };
+            controller.onCancel = () => cleanup(false);
+
             FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onHeartbeat);
-            armWatchdog();
+
+            // Starting a quest that is already paused must not spoof at all, rather than spoof
+            // and immediately take it back.
+            if (!controller.paused) {
+                startSpoof();
+                armWatchdog();
+            }
 
             console.log(`Spoofed your game to ${applicationName ?? appData.name}. Wait for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
         }).catch(err => {

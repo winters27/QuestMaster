@@ -14,14 +14,24 @@ export const streamOnDesktopHandler: QuestHandler = {
         return taskName === "STREAM_ON_DESKTOP";
     },
 
-    handle({ quest, questName, taskName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, FluxDispatcher, completingQuest, onQuestComplete }) {
+    handle({ quest, questName, taskName, secondsNeeded, secondsDone, applicationId, applicationName, pid, configVersion, FluxDispatcher, completingQuest, controller, onQuestComplete }) {
         const realFunc = ApplicationStreamingStore.getStreamerActiveStreamMetadata;
 
-        ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
-            id: applicationId,
-            pid,
-            sourceName: null
-        });
+        let spoofing = false;
+        const startSpoof = () => {
+            if (spoofing) return;
+            spoofing = true;
+            ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
+                id: applicationId,
+                pid,
+                sourceName: null
+            });
+        };
+        const stopSpoof = () => {
+            if (!spoofing) return;
+            spoofing = false;
+            ApplicationStreamingStore.getStreamerActiveStreamMetadata = realFunc;
+        };
 
         let cleaned = false;
         let beats = 0;
@@ -40,7 +50,7 @@ export const streamOnDesktopHandler: QuestHandler = {
             cleaned = true;
 
             clearTimeout(watchdog);
-            ApplicationStreamingStore.getStreamerActiveStreamMetadata = realFunc;
+            stopSpoof();
             unsubscribe();
 
             if (completed) {
@@ -85,7 +95,23 @@ export const streamOnDesktopHandler: QuestHandler = {
             }
         };
 
+        // Pausing drops the spoofed stream metadata, so Discord goes back to seeing whatever is
+        // really being streamed and stops crediting the quest. The watchdog stands down with it,
+        // because here the heartbeats stopping is what was asked for.
+        controller.onPause = () => {
+            clearTimeout(watchdog);
+            stopSpoof();
+        };
+        controller.onResume = () => {
+            startSpoof();
+            // Deliberately not re-armed here. Same reason it is not armed at the start: this quest
+            // waits on you to start streaming, which has no time limit, so the watchdog only
+            // arrives once heartbeats have.
+        };
+        controller.onCancel = () => cleanup(false);
+
         FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", onHeartbeat);
+        if (!controller.paused) startSpoof();
 
         console.log(`Spoofed your stream to ${applicationName ?? "the quest game"}. Stream any window in vc for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
         console.log("Remember that you need at least 1 other person to be in the vc!");

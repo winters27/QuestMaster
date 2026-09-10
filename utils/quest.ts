@@ -39,3 +39,32 @@ export function readTaskProgress(userStatus: any, taskName: string, configVersio
 
     return Math.floor(entry?.value ?? userStatus?.streamProgressSeconds ?? 0);
 }
+
+/**
+ * Every task type the plugin knows how to run, in the order it prefers them when a quest
+ * offers more than one.
+ */
+export const SUPPORTED_TASKS = [
+    "WATCH_VIDEO",
+    "PLAY_ON_DESKTOP",
+    "STREAM_ON_DESKTOP",
+    "PLAY_ACTIVITY",
+    "WATCH_VIDEO_ON_MOBILE",
+] as const;
+
+export type SupportedTask = (typeof SUPPORTED_TASKS)[number];
+
+/**
+ * How many orbs a quest pays. The number is already on the quest we hold, so this is a sum
+ * rather than anything the plugin has to track for itself.
+ */
+export function questOrbs(quest: QuestValue): number {
+    const rewards = quest.config?.rewardsConfig?.rewards ?? [];
+    return rewards.reduce((total: number, reward: any) => total + (reward?.orbQuantity ?? 0), 0);
+}
+
+/** The task this plugin would actually run for a quest, or undefined if it supports none of them. */
+export function resolveTaskName(quest: QuestValue): SupportedTask | undefined {
+    const taskConfig = (quest.config as any).taskConfig ?? quest.config.taskConfigV2;
+    return SUPPORTED_TASKS.find(task => taskConfig?.tasks?.[task] != null);
+}

@@ -5,6 +5,7 @@
  */
 
 import { SpoofingProfile } from "../types/spoofing";
+import { QuestController } from "../utils/questControl";
 
 export interface QuestHandlerContext {
     quest: QuestValue;
@@ -32,6 +33,8 @@ export interface QuestHandlerContext {
     ChannelStore: any;
     GuildChannelStore: any;
     getSpoofingProfile: () => SpoofingProfile;
+    /** Pause, resume and stop for this one quest. */
+    controller: QuestController;
     onQuestComplete: () => void;
 }
 

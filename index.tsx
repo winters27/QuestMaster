@@ -7,17 +7,20 @@
 import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
 import { findByCodeLazy, findByPropsLazy } from "@webpack";
-import { FluxDispatcher, RestAPI } from "@webpack/common";
+import { FluxDispatcher, RestAPI, showToast, Toasts } from "@webpack/common";
 
 import { QuestButton, QuestsCount } from "./components/QuestButton";
 import { mountQuestPanel, unmountQuestPanel } from "./components/QuestPanel";
 import { questHandlers } from "./handlers";
 import { bypassCaptcha, cleanupCaptchaMonitor, clearTokenCache, detectCaptchaChallenge, hasSolverService, noticeManualCaptcha, patchRequestWithCaptchaBypass, setupCaptchaMonitor, startTokenCacheCleanup, stopTokenCacheCleanup } from "./handlers/captcha";
+import { getSkippedIds, isPaused, registerQuestRunner, resetOps, trackQuest, untrackQuest } from "./questOps";
 import { clearAllQuestRuntime, clearQuestRuntime, setPanelOpen, setQuestRuntime, toggleQuestPanel } from "./questState";
 import settings from "./settings";
 import { ChannelStore, GuildChannelStore, QuestsStore, RunningGameStore } from "./stores";
 import { SpoofingProfile, SpoofingSpeedMode } from "./types/spoofing";
-import { readTaskProgress, resolveQuestApplication } from "./utils/quest";
+import { devQuests, devRestAPI, isDevMode } from "./utils/dev";
+import { readTaskProgress, resolveQuestApplication, resolveTaskName } from "./utils/quest";
+import { createController, getController, removeController, setGlobalPause } from "./utils/questControl";
 import { callWithRetry } from "./utils/retry";
 import { checkForUpdate } from "./utils/updateCheck";
 
@@ -47,6 +50,44 @@ const rewardPreferenceCache = new Map<string, boolean>();
  */
 const claimBackoff = new Map<string, number>();
 const CLAIM_CAPTCHA_BACKOFF_MS = 2 * 60 * 1000;
+
+/**
+ * Which setting switches each task type off. Only these five ever reach here, because a quest
+ * offering anything else is rejected before this is consulted.
+ */
+const TASK_SETTING = {
+    WATCH_VIDEO: "taskWatchVideo",
+    WATCH_VIDEO_ON_MOBILE: "taskWatchVideoOnMobile",
+    PLAY_ON_DESKTOP: "taskPlayOnDesktop",
+    STREAM_ON_DESKTOP: "taskStreamOnDesktop",
+    PLAY_ACTIVITY: "taskPlayActivity",
+} as const;
+
+function isTaskEnabled(taskName: string) {
+    const key = TASK_SETTING[taskName as keyof typeof TASK_SETTING];
+    return key ? settings.store[key] !== false : true;
+}
+
+/**
+ * One toast per reward, not one per check. updateQuests runs on every store change, so without
+ * this the same claimable quest would announce itself over and over.
+ */
+const announcedClaimable = new Set<string>();
+
+function announceClaimable(quest: QuestValue) {
+    if (!settings.store.notifyOnClaimable) return;
+    if (announcedClaimable.has(quest.id)) return;
+    announcedClaimable.add(quest.id);
+
+    const questName = quest.config.messages.questName ?? quest.id;
+    try {
+        showToast(`${questName}: reward ready to claim`, Toasts.Type.SUCCESS);
+    } catch (err) {
+        // The toast comes from a Discord module that can move. Losing it should cost the notice,
+        // not the claim.
+        console.error("[QuestMaster] Could not show the claim toast:", err);
+    }
+}
 
 function getCaptchaApiKeys() {
     return {
@@ -347,8 +388,41 @@ async function claimQuestReward(quest: QuestValue) {
 
 function handleQuestCompletion(quest: QuestValue) {
     completingQuest.set(quest.id, false);
+    removeController(quest.id);
+    untrackQuest(quest.id);
     clearQuestRuntime(quest.id);
     void claimQuestReward(quest);
+}
+
+/** Starts one quest by id, for the panel's Run now and Retry buttons. */
+async function startQuestById(questId: string) {
+    const find = () => availableQuests.find(q => q.id === questId)
+        ?? [...QuestsStore.quests.values()].find(q => q.id === questId);
+
+    const quest = find();
+    if (!quest) {
+        console.warn("[QuestMaster] Asked to start a quest that is no longer listed:", questId);
+        return;
+    }
+
+    completingQuest.delete(questId);
+    removeController(questId);
+
+    // Enrolling has to finish first. The video handler measures how much progress it is allowed
+    // to claim from enrolledAt, so starting before that lands would measure from nothing.
+    // Pressing the button is the ask, so it enrols even with auto-accept switched off.
+    if (quest.userStatus?.enrolledAt == null) {
+        await acceptQuest(quest, true);
+    }
+
+    const fresh = find() ?? quest;
+    if (fresh.userStatus?.enrolledAt == null) {
+        console.error("[QuestMaster] Could not enrol in the quest, so there is nothing to run:", questId);
+        setQuestRuntime(questId, { status: "skipped", why: "could not enrol" });
+        return;
+    }
+
+    completeQuest(fresh);
 }
 
 export default definePlugin({
@@ -390,6 +464,13 @@ export default definePlugin({
         }
     ],
     start: () => {
+        if (isDevMode()) console.warn("[QuestMaster] Dev overrides are in place. Quests and requests may be fake.");
+
+        // The pause is deliberately remembered across restarts, so restore it before the first
+        // scan rather than letting one slip through.
+        setGlobalPause(settings.store.questsPaused === true);
+        registerQuestRunner(startQuestById);
+
         QuestsStore.addChangeListener(updateQuestsDebounced);
         updateQuests();
 
@@ -445,6 +526,8 @@ export default definePlugin({
         rewardPreferenceCache.clear();
         lastProcessedQuestIds.clear();
         claimBackoff.clear();
+        announcedClaimable.clear();
+        resetOps();
         clearAllQuestRuntime();
     },
 
@@ -490,11 +573,28 @@ function updateQuestsDebounced() {
 }
 
 function updateQuests() {
-    availableQuests = [...QuestsStore.quests.values()];
+    availableQuests = devQuests([...QuestsStore.quests.values()]);
     const preferredQuests = availableQuests.filter(questMatchesRewardPreference);
-    acceptableQuests = preferredQuests.filter(x => x.userStatus?.enrolledAt == null && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
-    completableQuests = preferredQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+
+    // A quest you skipped and a task type you switched off are both "leave it alone", so neither
+    // gets enrolled in nor started. Claiming is left out of this on purpose: a reward already
+    // earned should still be collectable after you stop the quest that earned it.
+    const skipped = getSkippedIds();
+    const wanted = preferredQuests.filter(quest => {
+        if (skipped.has(quest.id)) return false;
+
+        const taskName = resolveTaskName(quest);
+        return taskName == null || isTaskEnabled(taskName);
+    });
+
+    acceptableQuests = wanted.filter(x => x.userStatus?.enrolledAt == null && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+    completableQuests = wanted.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
     claimableQuests = preferredQuests.filter(x => x.userStatus?.completedAt && !x.userStatus?.claimedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+
+    for (const quest of claimableQuests) announceClaimable(quest);
+
+    // Paused means nothing new starts. Anything already running is held by its own controller.
+    if (isPaused()) return;
 
     const currentQuestIds = new Set([
         ...acceptableQuests.map(q => `accept-${q.id}`),
@@ -528,8 +628,10 @@ function updateQuests() {
     }
 }
 
-async function acceptQuest(quest: QuestValue) {
-    if (!settings.store.acceptQuestsAutomatically) return;
+async function acceptQuest(quest: QuestValue, force = false) {
+    // force is the panel's Run now: you asked for this one by hand, so the auto-accept setting
+    // is not the question being answered.
+    if (!force && !settings.store.acceptQuestsAutomatically) return;
     const action: QuestAction = {
         questContent: QuestLocationMap.QUEST_HOME_DESKTOP,
         questContentCTA: "ACCEPT_QUEST",
@@ -566,6 +668,9 @@ function stopCompletingAll() {
         if (completingQuest.has(quest.id)) {
             completingQuest.set(quest.id, false);
         }
+        // The two handlers that wait on Discord's heartbeats never look at the map above, so
+        // they only stop if their controller tells them to.
+        getController(quest.id)?.cancel("plugin stopped");
     }
     console.log("Stopped completing all quests.");
 }
@@ -605,6 +710,12 @@ function completeQuest(quest: QuestValue) {
         return;
     }
 
+    if (!isTaskEnabled(taskName)) {
+        console.log("Task type turned off, leaving quest alone:", questName, `(${taskName})`);
+        setQuestRuntime(quest.id, { name: questName, taskName, status: "skipped", why: "task type turned off" });
+        return;
+    }
+
     // Resolve the application only after the task is known, since newer quests store it
     // per task rather than on the quest config.
     const taskData = taskConfig.tasks[taskName];
@@ -636,13 +747,20 @@ function completeQuest(quest: QuestValue) {
     }
 
     completingQuest.set(quest.id, true);
+
+    // One controller per quest, so the panel can pause, resume or stop this one without the
+    // handler needing to know which of those happened.
+    const controller = createController(quest.id);
+    trackQuest(quest.id);
+
     setQuestRuntime(quest.id, {
         name: questName,
         taskName,
-        status: "running",
+        status: controller.paused ? "paused" : "running",
         value: secondsDone,
         target: secondsNeeded,
         why: undefined,
+        failed: false,
     });
 
     console.log(`Completing quest ${questName} (${quest.id}) - ${taskName} for ${secondsNeeded} seconds.`);
@@ -665,12 +783,13 @@ function completeQuest(quest: QuestValue) {
         removeFakeGame,
         addFakeApplication,
         removeFakeApplication,
-        RestAPI,
+        RestAPI: devRestAPI(RestAPI),
         FluxDispatcher,
         RunningGameStore,
         ChannelStore,
         GuildChannelStore,
         getSpoofingProfile,
+        controller,
         onQuestComplete: () => handleQuestCompletion(quest)
     });
 }
