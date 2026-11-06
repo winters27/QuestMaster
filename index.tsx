@@ -7,7 +7,7 @@
 import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
 import { findByCodeLazy, findByPropsLazy } from "@webpack";
-import { FluxDispatcher, RestAPI, showToast, Toasts } from "@webpack/common";
+import { FluxDispatcher, RestAPI, showToast } from "@webpack/common";
 
 import { QuestButton, QuestsCount } from "./components/QuestButton";
 import { mountQuestPanel, unmountQuestPanel } from "./components/QuestPanel";
@@ -105,7 +105,7 @@ function announceClaimable(quest: QuestValue) {
 
     const questName = quest.config.messages.questName ?? quest.id;
     try {
-        showToast(`${questName}: reward ready to claim`, Toasts.Type.SUCCESS);
+        showToast({ text: `${questName}: reward ready to claim`, variant: "success" });
     } catch (err) {
         // The toast comes from a Discord module that can move. Losing it should cost the notice,
         // not the claim.
