@@ -121,6 +121,100 @@ function Find-VencordInstallation {
     }
     return $null
 }
+
+function Test-IsPluginSource {
+    param([string]$Path)
+    # True when the folder holds the plugin's own files (a clone or an extracted ZIP),
+    # not just this script on its own in a folder like Downloads.
+    $indexPath = Join-Path $Path "index.tsx"
+    if (-not (Test-Path $indexPath)) { return $false }
+    return (Get-Content $indexPath -Raw) -match 'name:\s*"QuestMaster"'
+}
+
+function Install-PluginFiles {
+    param([string]$SourceDir, [string]$PluginDestDir)
+    # Puts the plugin in Vencord's userplugins folder and returns the folder that now holds it.
+
+    if (Test-IsPluginSource $SourceDir) {
+        if (Test-Path $PluginDestDir) {
+            Write-Info "Plugin directory exists. Updating files..."
+            # Remove old files but keep .git if exists
+            Get-ChildItem $PluginDestDir -Exclude ".git" | Remove-Item -Recurse -Force
+        }
+        else {
+            Write-Info "Creating plugin directory..."
+            New-Item -ItemType Directory -Path $PluginDestDir -Force | Out-Null
+        }
+
+        Write-Info "Copying plugin files..."
+        Get-ChildItem $SourceDir -Exclude ".git" | Copy-Item -Destination $PluginDestDir -Recurse -Force
+        Write-Success "Plugin files installed to: $PluginDestDir"
+        return $PluginDestDir
+    }
+
+    # Run on its own, the folder this script sits in is not the plugin, so copying it
+    # would fill the plugin folder with whatever else is there. Use the copy already
+    # installed, or download one; step 6 brings either up to date.
+    Write-Info "This script is not next to the plugin files."
+    if (Test-Path $PluginDestDir) {
+        Write-Success "Using the installed plugin: $PluginDestDir"
+        return $PluginDestDir
+    }
+
+    Write-Info "Downloading the plugin from $GitRepoUrl..."
+    $oldPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        # git writes progress to stderr, which Windows PowerShell turns into an error.
+        $null = git clone $GitRepoUrl $PluginDestDir 2>&1
+        $cloneExit = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $oldPref }
+    if ($cloneExit -ne 0) {
+        throw "Could not download the plugin (git clone exit code $cloneExit)."
+    }
+    Write-Success "Plugin downloaded to: $PluginDestDir"
+    return $PluginDestDir
+}
+
+function Get-PinnedPnpmVersion {
+    param([string]$VencordPath)
+    try {
+        $pin = (Get-Content (Join-Path $VencordPath "package.json") -Raw | ConvertFrom-Json).packageManager
+    }
+    catch { return $null }
+    if ($pin -match '^pnpm@([^+]+)') { return $Matches[1] }
+    return $null
+}
+
+function Repair-PinnedPnpm {
+    param([string]$VencordPath)
+    # Vencord pins a pnpm version in package.json. An older pnpm downloads that version
+    # the first time it runs there but skips the script that puts its pnpm.exe in place,
+    # which leaves a file cmd cannot run ("...\node_modules\pnpm\pnpm is not recognized").
+    # Running that skipped script finishes the install.
+    $version = Get-PinnedPnpmVersion $VencordPath
+    if (-not $version) { return }
+
+    # Any pnpm command run inside Vencord makes pnpm fetch the pinned version first.
+    $null = Start-Process -FilePath "cmd.exe" -ArgumentList "/c pnpm --version >nul 2>&1" -WorkingDirectory $VencordPath -NoNewWindow -PassThru -Wait
+
+    $roots = @($env:PNPM_HOME, (Join-Path $env:LOCALAPPDATA "pnpm")) | Where-Object { $_ } | Select-Object -Unique
+    foreach ($root in $roots) {
+        $wrapperDir = Join-Path $root ".tools\pnpm\$version\node_modules\pnpm"
+        $isHalfInstalled = (Test-Path (Join-Path $wrapperDir "install.js")) -and -not (Test-Path (Join-Path $wrapperDir "pnpm.exe"))
+        if (-not $isHalfInstalled) { continue }
+
+        Write-Info "pnpm $version (the version Vencord asks for) was only half installed. Finishing it..."
+        $repairProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c node install.js" -WorkingDirectory $wrapperDir -NoNewWindow -PassThru -Wait
+        if ($repairProc.ExitCode -eq 0) {
+            Write-Success "pnpm $version repaired."
+        }
+        else {
+            Write-Warn "Could not finish installing pnpm $version."
+        }
+    }
+}
 #endregion
 
 #region Main Script
@@ -302,25 +396,8 @@ try {
     if ($isFirstTimeInstall) {
         Write-SectionHeader "[5/10] Installing plugin to Vencord..."
 
-        # Copy plugin files to destination
-        if (Test-Path $PluginDestDir) {
-            Write-Info "Plugin directory exists. Updating files..."
-            # Remove old files but keep .git if exists
-            Get-ChildItem $PluginDestDir -Exclude ".git" | Remove-Item -Recurse -Force
-        }
-        else {
-            Write-Info "Creating plugin directory..."
-            New-Item -ItemType Directory -Path $PluginDestDir -Force | Out-Null
-        }
-
-        # Copy all files from source to destination
-        Write-Info "Copying plugin files..."
-        Get-ChildItem $ScriptDir -Exclude ".git" | Copy-Item -Destination $PluginDestDir -Recurse -Force
-
-        Write-Success "Plugin files installed to: $PluginDestDir"
-
-        # Update ScriptDir to point to the new location for git operations
-        $ScriptDir = $PluginDestDir
+        # Point ScriptDir at the installed copy for the git operations
+        $ScriptDir = Install-PluginFiles $ScriptDir $PluginDestDir
     }
     else {
         Write-SectionHeader "[5/10] Plugin already in place."
@@ -506,6 +583,8 @@ try {
     try {
         Set-Location $VencordPath
 
+        Repair-PinnedPnpm $VencordPath
+
         Write-Info "Running pnpm install --frozen-lockfile..."
         $installProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c pnpm install --frozen-lockfile" -NoNewWindow -PassThru -Wait
 
@@ -522,6 +601,12 @@ try {
     catch {
         Write-Err "Dependency sync error: $($_.Exception.Message)"
         Write-Host ""
+        $pinnedPnpm = Get-PinnedPnpmVersion $VencordPath
+        if ($pinnedPnpm) {
+            Write-Host "  Vencord needs pnpm $pinnedPnpm. If yours is older, update it first:" -ForegroundColor Gray
+            Write-Host "    npm install -g pnpm@latest" -ForegroundColor Gray
+            Write-Host ""
+        }
         Write-Host "  Try running manually:" -ForegroundColor Gray
         Write-Host "    cd $VencordPath" -ForegroundColor Gray
         Write-Host "    pnpm install" -ForegroundColor Gray

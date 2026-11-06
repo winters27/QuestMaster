@@ -45,6 +45,14 @@ You need these installed first:
    pnpm install --frozen-lockfile
    ```
 
+   If `pnpm install` says `...\node_modules\pnpm\pnpm" is not recognized`, your pnpm only half installed the newer pnpm that Vencord asks for. Finish that install, then run the install again (use the version number from the error):
+   ```powershell
+   cd "$env:LOCALAPPDATA\pnpm\.tools\pnpm\12.15.0\node_modules\pnpm"
+   node install.js
+   cd $HOME\Documents\Vencord
+   pnpm install --frozen-lockfile
+   ```
+
 2. **Download QuestMaster**:
    - [Download the latest release](https://github.com/winters27/QuestMaster/archive/refs/heads/main.zip)
    - Extract the ZIP to a temporary location
